@@ -2,6 +2,7 @@ package rain
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -75,11 +76,20 @@ type cell struct {
 }
 
 type stream struct {
-	x          int
+	baseX      int
 	head       float64
 	speed      float64
 	length     int
 	paletteIdx int
+	layer      int
+	swayPhase  float64
+}
+
+type splash struct {
+	x, y   float64
+	vx, vy float64
+	life   int
+	color  string
 }
 
 // Run launches the rain animation loop.
@@ -91,15 +101,18 @@ func Run(cfg Config) {
 	defer fmt.Print(ansiShow, ansiReset)
 
 	streams := makeStreams(cfg)
+	splashes := make([]splash, 0, 128)
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
 
 	for frame := 0; ; frame++ {
 		grid := newGrid(cfg.Width, cfg.Height)
 		drawMist(grid, frame)
-		drawStreams(grid, streams, frame)
+		drawStreams(grid, streams, frame, &splashes)
+		drawSplashes(grid, splashes)
 		render(grid)
-		updateStreams(streams, cfg.Height)
+		updateSplashes(&splashes, cfg.Width, cfg.Height)
+		updateStreams(streams, cfg.Width, cfg.Height)
 
 		<-ticker.C
 	}
@@ -130,11 +143,13 @@ func drawMist(grid [][]cell, frame int) {
 	}
 }
 
-func drawStreams(grid [][]cell, streams []stream, frame int) {
+func drawStreams(grid [][]cell, streams []stream, frame int, splashes *[]splash) {
 	height := len(grid)
+	width := len(grid[0])
 	for _, s := range streams {
 		palette := streamPalettes[s.paletteIdx%len(streamPalettes)]
 		head := int(s.head)
+		column := streamColumn(s, frame, width)
 		for i := 0; i < s.length; i++ {
 			y := head - i
 			if y < 0 || y >= height {
@@ -144,20 +159,86 @@ func drawStreams(grid [][]cell, streams []stream, frame int) {
 			if i == 0 {
 				color = glowPalette[(frame+y)%len(glowPalette)]
 			} else {
-				color = palette[min(i/2, len(palette)-1)]
+				color = palette[min(i/2+s.layer, len(palette)-1)]
 			}
 			glyph := glyphPool[(frame+y+i)%len(glyphPool)]
-			setCell(grid, s.x, y, glyph, color)
+			setCell(grid, column, y, glyph, color)
+			if i == 0 && y >= height-2 {
+				emitSplash(splashes, column, height)
+			}
 		}
 	}
 }
 
-func updateStreams(streams []stream, height int) {
+func streamColumn(s stream, frame int, width int) int {
+	sway := math.Sin(s.swayPhase + float64(frame)*0.02*float64(s.layer+1))
+	offset := int(math.Round(sway * float64(s.layer+1)))
+	col := s.baseX + offset
+	if col < 0 {
+		return 0
+	}
+	if col >= width {
+		return width - 1
+	}
+	return col
+}
+
+func emitSplash(splashes *[]splash, x int, height int) {
+	count := 2 + rand.Intn(3)
+	baseY := float64(height - 2)
+	for i := 0; i < count; i++ {
+		*splashes = append(*splashes, splash{
+			x:     float64(x) + rand.Float64()*0.6 - 0.3,
+			y:     baseY,
+			vx:    rand.Float64()*0.8 - 0.4,
+			vy:    -0.6 - rand.Float64()*0.7,
+			life:  10 + rand.Intn(10),
+			color: glowPalette[rand.Intn(len(glowPalette))],
+		})
+	}
+}
+
+func drawSplashes(grid [][]cell, splashes []splash) {
+	for _, sp := range splashes {
+		x := int(math.Round(sp.x))
+		y := int(math.Round(sp.y))
+		if y < 0 || y >= len(grid) {
+			continue
+		}
+		if x < 0 || x >= len(grid[y]) {
+			continue
+		}
+		setCell(grid, x, y, '\'', sp.color)
+	}
+}
+
+func updateSplashes(splashes *[]splash, width, height int) {
+	items := *splashes
+	dst := items[:0]
+	for i := range items {
+		items[i].x += items[i].vx
+		items[i].y += items[i].vy
+		items[i].vy += 0.08
+		items[i].life--
+		if items[i].x < 0 || items[i].x >= float64(width) {
+			continue
+		}
+		if items[i].y >= float64(height-1) {
+			continue
+		}
+		if items[i].life <= 0 {
+			continue
+		}
+		dst = append(dst, items[i])
+	}
+	*splashes = dst
+}
+
+func updateStreams(streams []stream, width, height int) {
 	for i := range streams {
 		streams[i].head += streams[i].speed
 		if int(streams[i].head)-streams[i].length > height {
-			resetStream(&streams[i], height)
-			streams[i].head = -float64(rand.Intn(height))
+			resetStream(&streams[i], width, height, false)
 		}
 	}
 }
@@ -169,18 +250,24 @@ func makeStreams(cfg Config) []stream {
 	}
 	streams := make([]stream, count)
 	for i := range streams {
-		streams[i].x = rand.Intn(cfg.Width)
-		resetStream(&streams[i], cfg.Height)
-		streams[i].head = rand.Float64() * float64(cfg.Height)
+		resetStream(&streams[i], cfg.Width, cfg.Height, true)
 	}
 	return streams
 }
 
-func resetStream(s *stream, height int) {
+func resetStream(s *stream, width, height int, visible bool) {
+	s.baseX = rand.Intn(width)
 	s.length = clampInt(6+rand.Intn(height/2), 6, height)
-	s.speed = 0.4 + rand.Float64()*0.9
+	s.layer = rand.Intn(3)
+	baseSpeed := 0.35 + float64(s.layer)*0.25
+	s.speed = baseSpeed + rand.Float64()*0.6
 	s.paletteIdx = rand.Intn(len(streamPalettes))
-	s.head = -float64(rand.Intn(height))
+	s.swayPhase = rand.Float64() * math.Pi * 2
+	if visible {
+		s.head = rand.Float64() * float64(height)
+	} else {
+		s.head = -float64(rand.Intn(height))
+	}
 }
 
 func render(grid [][]cell) {
