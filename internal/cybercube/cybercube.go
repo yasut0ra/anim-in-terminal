@@ -40,6 +40,16 @@ var (
 		"\x1b[38;5;44m",
 		"\x1b[38;5;81m",
 	}
+	ghostPalette = []string{
+		"\x1b[38;5;238m",
+		"\x1b[38;5;239m",
+		"\x1b[38;5;240m",
+	}
+	backdropPalette = []string{
+		"\x1b[38;5;233m",
+		"\x1b[38;5;234m",
+		"\x1b[38;5;235m",
+	}
 )
 
 // Config exposes the knobs for the animation.
@@ -137,6 +147,7 @@ func Run(cfg Config) {
 
 	for {
 		grid := newGrid(cfg.Width, cfg.Height)
+		drawBackdrop(grid, frame)
 		drawCube(grid, ax, ay, az, frame)
 
 		render(grid)
@@ -164,22 +175,41 @@ func newGrid(width, height int) [][]cell {
 	return grid
 }
 
+func drawBackdrop(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for y := 0; y < height; y++ {
+		if y%4 != 0 {
+			continue
+		}
+		color := backdropPalette[(y/4+frame/30)%len(backdropPalette)]
+		for x := 0; x < width; x += 2 {
+			glyph := byte('.')
+			if (x/2+y+frame/8)%5 == 0 {
+				glyph = ':'
+			}
+			setIfEmpty(grid, x, y, glyph, color)
+		}
+	}
+}
+
 func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
 	width := len(grid[0])
 	height := len(grid)
-	scale := float64(min(width, height)) * 0.9
+	baseScale := float64(min(width, height)) * 0.9
+	pulse := 0.85 + 0.15*math.Sin(float64(frame)*0.05)
+	scale := baseScale * pulse
+	ghostScale := scale * 1.12
 
 	rotated := make([]vec3, len(cubeVertices))
 	for i, v := range cubeVertices {
 		rotated[i] = rotate(v, ax, ay, az)
 	}
 
-	projected := make([]point2D, len(rotated))
-	for i, v := range rotated {
-		x, y, depth := project(v, scale, width, height)
-		projected[i] = point2D{x: x, y: y, depth: depth}
-	}
+	projected := projectVertices(rotated, scale, width, height)
+	ghostProjected := projectVertices(rotated, ghostScale, width, height)
 
+	drawGhostFrame(grid, ghostProjected, frame)
 	drawFaces(grid, rotated, projected, frame)
 
 	type edgeRender struct {
@@ -212,6 +242,31 @@ func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
 
 	for _, pt := range projected {
 		setCell(grid, pt.x, pt.y, 'O', glowForDepth(pt.depth), pt.depth-0.08)
+	}
+}
+
+func projectVertices(vertices []vec3, scale float64, width, height int) []point2D {
+	projected := make([]point2D, len(vertices))
+	for i, v := range vertices {
+		x, y, depth := project(v, scale, width, height)
+		projected[i] = point2D{x: x, y: y, depth: depth}
+	}
+	return projected
+}
+
+func drawGhostFrame(grid [][]cell, projected []point2D, frame int) {
+	if len(projected) == 0 {
+		return
+	}
+	for idx, edge := range cubeEdges {
+		color := ghostPalette[(idx+frame/6)%len(ghostPalette)]
+		from := projected[edge[0]]
+		to := projected[edge[1]]
+		points := linePoints(from.x, from.y, to.x, to.y)
+		for _, p := range points {
+			depth := (from.depth+to.depth)*0.5 + 1.5
+			setCell(grid, p[0], p[1], '.', color, depth)
+		}
 	}
 }
 
@@ -413,6 +468,18 @@ func setCell(grid [][]cell, x, y int, glyph byte, color string, depth float64) {
 		return
 	}
 	grid[y][x] = cell{glyph: glyph, color: color, depth: depth}
+}
+
+func setIfEmpty(grid [][]cell, x, y int, glyph byte, color string) {
+	if y < 0 || y >= len(grid) {
+		return
+	}
+	if x < 0 || x >= len(grid[y]) {
+		return
+	}
+	if grid[y][x].glyph == ' ' {
+		grid[y][x] = cell{glyph: glyph, color: color, depth: math.MaxFloat64}
+	}
 }
 
 func render(grid [][]cell) {
