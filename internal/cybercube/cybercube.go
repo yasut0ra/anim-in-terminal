@@ -11,6 +11,7 @@ import (
 const (
 	cameraDistance = 4.5
 	aspectRatio    = 0.55
+	maxFitAttempts = 10
 )
 
 var (
@@ -64,7 +65,7 @@ func DefaultConfig() Config {
 	return Config{
 		Width:      96,
 		Height:     32,
-		FrameDelay: 60 * time.Millisecond,
+		FrameDelay: 45 * time.Millisecond,
 	}
 }
 
@@ -152,9 +153,9 @@ func Run(cfg Config) {
 
 		render(grid)
 
-		ax += 0.03
-		ay += 0.02
-		az += 0.017
+		ax += 0.022
+		ay += 0.017
+		az += 0.013
 		frame++
 
 		<-ticker.C
@@ -196,18 +197,18 @@ func drawBackdrop(grid [][]cell, frame int) {
 func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
 	width := len(grid[0])
 	height := len(grid)
-	baseScale := float64(min(width, height)) * 0.9
+	baseScale := float64(min(width, height)) * 1.25
 	pulse := 0.85 + 0.15*math.Sin(float64(frame)*0.05)
-	scale := baseScale * pulse
-	ghostScale := scale * 1.12
+	initialScale := baseScale * pulse
 
 	rotated := make([]vec3, len(cubeVertices))
 	for i, v := range cubeVertices {
 		rotated[i] = rotate(v, ax, ay, az)
 	}
 
-	projected := projectVertices(rotated, scale, width, height)
-	ghostProjected := projectVertices(rotated, ghostScale, width, height)
+	projected, fittedScale := projectToFit(rotated, width, height, initialScale, 2)
+	ghostScale := fittedScale * 1.08
+	ghostProjected, _ := projectToFit(rotated, width, height, ghostScale, 1)
 
 	drawGhostFrame(grid, ghostProjected, frame)
 	drawFaces(grid, rotated, projected, frame)
@@ -252,6 +253,38 @@ func projectVertices(vertices []vec3, scale float64, width, height int) []point2
 		projected[i] = point2D{x: x, y: y, depth: depth}
 	}
 	return projected
+}
+
+func projectToFit(vertices []vec3, width, height int, scale float64, margin int) ([]point2D, float64) {
+	current := projectVertices(vertices, scale, width, height)
+	if withinMargins(current, width, height, margin) {
+		return current, scale
+	}
+	nextScale := scale
+	for i := 0; i < maxFitAttempts; i++ {
+		nextScale *= 0.94
+		projected := projectVertices(vertices, nextScale, width, height)
+		if withinMargins(projected, width, height, margin) {
+			return projected, nextScale
+		}
+		current = projected
+	}
+	return current, nextScale
+}
+
+func withinMargins(points []point2D, width, height, margin int) bool {
+	if margin <= 0 {
+		margin = 1
+	}
+	for _, p := range points {
+		if p.x < margin || p.x >= width-margin {
+			return false
+		}
+		if p.y < margin || p.y >= height-margin {
+			return false
+		}
+	}
+	return true
 }
 
 func drawGhostFrame(grid [][]cell, projected []point2D, frame int) {
