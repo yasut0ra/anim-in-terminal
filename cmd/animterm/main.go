@@ -6,13 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"animinterminal/internal/cloud"
 	"animinterminal/internal/cybercube"
 	"animinterminal/internal/rain"
 	"animinterminal/internal/spectrum"
 )
 
 func main() {
-	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum")
+	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud")
 	width := flag.Int("width", 0, "override character width")
 	height := flag.Int("height", 0, "override character height")
 	delay := flag.Duration("delay", 0, "override frame delay (e.g. 50ms)")
@@ -31,8 +32,12 @@ func main() {
 		cfg := spectrum.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		spectrum.Run(cfg)
+	case "cloud", "clouds", "sky":
+		cfg := cloud.DefaultConfig()
+		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
+		cloud.Run(cfg)
 	default:
-		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum)\n", *mode)
+		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud)\n", *mode)
 	}
 }
 
