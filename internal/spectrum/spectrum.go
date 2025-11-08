@@ -32,7 +32,13 @@ var (
 		"\x1b[38;5;221m",
 		"\x1b[38;5;223m",
 	}
-	gridColor = "\x1b[38;5;237m"
+	gridColor   = "\x1b[38;5;237m"
+	peakColor   = "\x1b[38;5;229m"
+	beamPalette = []string{
+		"\x1b[38;5;36m",
+		"\x1b[38;5;44m",
+		"\x1b[38;5;51m",
+	}
 )
 
 // Config controls the spectrum animation.
@@ -74,6 +80,7 @@ type bar struct {
 	speed      float64
 	offset     float64
 	colorShift int
+	peak       float64
 }
 
 // Run launches the spectrum animation loop.
@@ -93,6 +100,7 @@ func Run(cfg Config) {
 		drawGrid(grid, frame)
 		drawWaveform(grid, frame)
 		drawBars(grid, bars, frame)
+		drawScanBeam(grid, frame)
 		render(grid)
 		updateBars(bars)
 
@@ -138,6 +146,9 @@ func drawBars(grid [][]cell, bars []bar, frame int) {
 	for i, b := range bars {
 		amp := barAmplitude(b)
 		barHeight := clampInt(int(amp*(float64(height)/1.3)), 2, height-4)
+		if float64(barHeight) > bars[i].peak {
+			bars[i].peak = float64(barHeight)
+		}
 		startX := i * columnWidth
 
 		for x := startX; x < startX+columnWidth && x < width; x++ {
@@ -151,6 +162,10 @@ func drawBars(grid [][]cell, bars []bar, frame int) {
 				setCell(grid, x, y, glyph, color)
 			}
 		}
+
+		peakY := base - clampInt(int(math.Round(bars[i].peak)), 1, height-3)
+		center := clampInt(startX+columnWidth/2, 0, width-1)
+		setCell(grid, center, peakY, '_', peakColor)
 	}
 }
 
@@ -161,10 +176,34 @@ func drawWaveform(grid [][]cell, frame int) {
 	for x := 0; x < width; x++ {
 		fx := float64(x)
 		value := math.Sin(fx*0.11+float64(frame)*0.08) +
-			0.6*math.Sin(fx*0.035+float64(frame)*0.025)
+			0.6*math.Sin(fx*0.035+float64(frame)*0.025) +
+			0.3*math.Sin(fx*0.23+float64(frame)*0.12)
 		y := clampInt(center-int(value*2.3), 1, height-5)
 		color := tracePalette[(x/4+frame/5)%len(tracePalette)]
 		setCell(grid, x, y, '*', color)
+		if y+1 < height-4 {
+			setCell(grid, x, y+1, '-', color)
+		}
+	}
+}
+
+func drawScanBeam(grid [][]cell, frame int) {
+	width := len(grid[0])
+	height := len(grid)
+	if width == 0 {
+		return
+	}
+	beamX := (frame / 2) % width
+	for offset := -1; offset <= 1; offset++ {
+		col := clampInt(beamX+offset, 0, width-1)
+		color := beamPalette[(offset+len(beamPalette)+frame/8)%len(beamPalette)]
+		for y := 1; y < height-2; y++ {
+			glyph := byte('|')
+			if (y+frame/3)%4 == 0 {
+				glyph = ':'
+			}
+			setIfEmpty(grid, col, y, glyph, color)
+		}
 	}
 }
 
@@ -202,6 +241,12 @@ func updateBars(bars []bar) {
 		}
 		bars[i].speed += (rand.Float64() - 0.5) * 0.005
 		bars[i].speed = clampFloat(bars[i].speed, 0.03, 0.18)
+		if bars[i].peak > 0 {
+			bars[i].peak -= 0.35
+			if bars[i].peak < 0 {
+				bars[i].peak = 0
+			}
+		}
 	}
 }
 
