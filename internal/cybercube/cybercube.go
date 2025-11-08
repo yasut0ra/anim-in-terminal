@@ -3,6 +3,7 @@ package cybercube
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -32,10 +33,12 @@ var (
 		"\x1b[38;5;123m",
 		"\x1b[38;5;51m",
 	}
-	backgroundPalette = []string{
-		"\x1b[38;5;236m",
-		"\x1b[38;5;237m",
-		"\x1b[38;5;238m",
+	faceFillPalette = []string{
+		"\x1b[38;5;24m",
+		"\x1b[38;5;31m",
+		"\x1b[38;5;38m",
+		"\x1b[38;5;44m",
+		"\x1b[38;5;81m",
 	}
 )
 
@@ -71,6 +74,7 @@ func (c Config) normalize() Config {
 type cell struct {
 	glyph byte
 	color string
+	depth float64
 }
 
 type vec3 struct {
@@ -80,6 +84,11 @@ type vec3 struct {
 type point2D struct {
 	x, y  int
 	depth float64
+}
+
+type faceDef struct {
+	indices [4]int
+	glyph   byte
 }
 
 var (
@@ -98,7 +107,15 @@ var (
 		{4, 5}, {5, 6}, {6, 7}, {7, 4},
 		{0, 4}, {1, 5}, {2, 6}, {3, 7},
 	}
-	binaryChars = []byte{'0', '1'}
+	cubeFaces = []faceDef{
+		{indices: [4]int{0, 3, 2, 1}, glyph: '/'},
+		{indices: [4]int{4, 5, 6, 7}, glyph: '\\'},
+		{indices: [4]int{3, 7, 6, 2}, glyph: '-'},
+		{indices: [4]int{0, 1, 5, 4}, glyph: '-'},
+		{indices: [4]int{1, 2, 6, 5}, glyph: '='},
+		{indices: [4]int{0, 4, 7, 3}, glyph: '='},
+	}
+	viewVector = vec3{0, 0, 1}
 )
 
 // Run starts the infinite cyber cube animation loop.
@@ -120,7 +137,6 @@ func Run(cfg Config) {
 
 	for {
 		grid := newGrid(cfg.Width, cfg.Height)
-		drawBackground(grid, frame)
 		drawCube(grid, ax, ay, az, frame)
 
 		render(grid)
@@ -139,29 +155,13 @@ func newGrid(width, height int) [][]cell {
 	for y := range grid {
 		grid[y] = make([]cell, width)
 		for x := range grid[y] {
-			grid[y][x].glyph = ' '
-		}
-	}
-	return grid
-}
-
-func drawBackground(grid [][]cell, frame int) {
-	height := len(grid)
-	width := len(grid[0])
-	for y := 0; y < height; y++ {
-		if (y+frame/2)%3 != 0 {
-			continue
-		}
-		color := backgroundPalette[(y/3+frame/12)%len(backgroundPalette)]
-		for x := 0; x < width; x++ {
-			if (x+frame)%7 == 0 {
-				glyph := binaryChars[(x+y+frame)&1]
-				setIfEmpty(grid, x, y, glyph, color)
-			} else if (x+frame/3)%11 == 0 {
-				setIfEmpty(grid, x, y, '-', color)
+			grid[y][x] = cell{
+				glyph: ' ',
+				depth: math.MaxFloat64,
 			}
 		}
 	}
+	return grid
 }
 
 func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
@@ -180,14 +180,129 @@ func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
 		projected[i] = point2D{x: x, y: y, depth: depth}
 	}
 
+	drawFaces(grid, rotated, projected, frame)
+
+	type edgeRender struct {
+		from  point2D
+		to    point2D
+		color string
+		depth float64
+	}
+
+	edges := make([]edgeRender, len(cubeEdges))
 	for idx, edge := range cubeEdges {
-		color := edgePalette[(idx+frame/5)%len(edgePalette)]
-		drawEdge(grid, projected[edge[0]], projected[edge[1]], color)
+		from := projected[edge[0]]
+		to := projected[edge[1]]
+		avgDepth := (from.depth + to.depth) * 0.5
+		edges[idx] = edgeRender{
+			from:  from,
+			to:    to,
+			color: edgeColor(idx, avgDepth, frame),
+			depth: avgDepth,
+		}
+	}
+
+	sort.Slice(edges, func(i, j int) bool {
+		return edges[i].depth > edges[j].depth
+	})
+
+	for _, edge := range edges {
+		drawEdge(grid, edge.from, edge.to, edge.color)
 	}
 
 	for _, pt := range projected {
-		setCell(grid, pt.x, pt.y, 'O', glowForDepth(pt.depth))
+		setCell(grid, pt.x, pt.y, 'O', glowForDepth(pt.depth), pt.depth-0.08)
 	}
+}
+
+func drawFaces(grid [][]cell, rotated []vec3, projected []point2D, frame int) {
+	for i, face := range cubeFaces {
+		a := rotated[face.indices[0]]
+		b := rotated[face.indices[1]]
+		c := rotated[face.indices[2]]
+
+		normal := cross(subtract(b, a), subtract(c, a))
+		intensity := -dot(normalize(normal), viewVector)
+		if intensity <= 0 {
+			continue
+		}
+
+		color := shadeForFace(intensity, frame+i)
+		p0 := projected[face.indices[0]]
+		p1 := projected[face.indices[1]]
+		p2 := projected[face.indices[2]]
+		p3 := projected[face.indices[3]]
+
+		fillTriangle(grid, p0, p1, p2, face.glyph, color)
+		fillTriangle(grid, p0, p2, p3, face.glyph, color)
+	}
+}
+
+func shadeForFace(intensity float64, frame int) string {
+	levels := len(faceFillPalette)
+	if levels == 0 {
+		return ""
+	}
+	idx := int(clampFloat(intensity*float64(levels-1), 0, float64(levels-1)))
+	offset := (frame / 24) % levels
+	return faceFillPalette[(idx+offset)%levels]
+}
+
+func fillTriangle(grid [][]cell, a, b, c point2D, glyph byte, color string) {
+	minX := max(0, min(a.x, min(b.x, c.x)))
+	maxX := min(len(grid[0])-1, max(a.x, max(b.x, c.x)))
+	minY := max(0, min(a.y, min(b.y, c.y)))
+	maxY := min(len(grid)-1, max(a.y, max(b.y, c.y)))
+
+	area := edgeFunction(a, b, c)
+	if area == 0 {
+		return
+	}
+
+	for y := minY; y <= maxY; y++ {
+		for x := minX; x <= maxX; x++ {
+			p := point2D{x: x, y: y}
+			w0 := edgeFunction(b, c, p)
+			w1 := edgeFunction(c, a, p)
+			w2 := edgeFunction(a, b, p)
+
+			if !sameSign(w0, w1, w2) {
+				continue
+			}
+
+			w0 /= area
+			w1 /= area
+			w2 /= area
+			depth := w0*a.depth + w1*b.depth + w2*c.depth
+
+			setCell(grid, x, y, glyph, color, depth+0.02)
+		}
+	}
+}
+
+func edgeFunction(a, b, c point2D) float64 {
+	return float64(b.x-a.x)*float64(c.y-a.y) - float64(b.y-a.y)*float64(c.x-a.x)
+}
+
+func sameSign(values ...float64) bool {
+	var hasPos, hasNeg bool
+	for _, v := range values {
+		if v > 0 {
+			hasPos = true
+		} else if v < 0 {
+			hasNeg = true
+		}
+	}
+	return !(hasPos && hasNeg)
+}
+
+func edgeColor(idx int, depth float64, frame int) string {
+	if len(edgePalette) == 0 {
+		return ""
+	}
+	closeness := clampInt(int((cameraDistance+1-depth)*3), 0, len(edgePalette)-1)
+	offset := (frame / 8) % len(edgePalette)
+	return edgePalette[(idx+offset+closeness)%len(edgePalette)]
 }
 
 func rotate(v vec3, ax, ay, az float64) vec3 {
@@ -208,20 +323,49 @@ func rotate(v vec3, ax, ay, az float64) vec3 {
 }
 
 func project(v vec3, scale float64, width, height int) (int, int, float64) {
-	z := v.z + cameraDistance
-	if z == 0 {
-		z = 0.001
+	distance := v.z + cameraDistance
+	if distance == 0 {
+		distance = 0.001
 	}
-	depth := scale / z
-	x := int(float64(width)/2 + v.x*depth)
-	y := int(float64(height)/2 - v.y*depth*aspectRatio)
-	return x, y, depth
+	scaleFactor := scale / distance
+	x := int(float64(width)/2 + v.x*scaleFactor)
+	y := int(float64(height)/2 - v.y*scaleFactor*aspectRatio)
+	return x, y, distance
 }
 
 func drawEdge(grid [][]cell, from, to point2D, color string) {
 	points := linePoints(from.x, from.y, to.x, to.y)
-	for _, p := range points {
-		setCell(grid, p[0], p[1], '#', color)
+	if len(points) == 0 {
+		return
+	}
+	glyph := edgeGlyph(to.x-from.x, to.y-from.y)
+	for i, p := range points {
+		var t float64
+		if len(points) > 1 {
+			t = float64(i) / float64(len(points)-1)
+		} else {
+			t = 0.5
+		}
+		depth := lerp(from.depth, to.depth, t) - 0.03
+		if depth < 0 {
+			depth = 0
+		}
+		setCell(grid, p[0], p[1], glyph, color, depth)
+	}
+}
+
+func edgeGlyph(dx, dy int) byte {
+	adx := abs(dx)
+	ady := abs(dy)
+	switch {
+	case adx > ady*2:
+		return '-'
+	case ady > adx*2:
+		return '|'
+	case dx*dy < 0:
+		return '/'
+	default:
+		return '\\'
 	}
 }
 
@@ -257,26 +401,18 @@ func linePoints(x0, y0, x1, y1 int) [][2]int {
 	return points
 }
 
-func setCell(grid [][]cell, x, y int, glyph byte, color string) {
+func setCell(grid [][]cell, x, y int, glyph byte, color string, depth float64) {
 	if y < 0 || y >= len(grid) {
 		return
 	}
 	if x < 0 || x >= len(grid[y]) {
 		return
 	}
-	grid[y][x] = cell{glyph: glyph, color: color}
-}
-
-func setIfEmpty(grid [][]cell, x, y int, glyph byte, color string) {
-	if y < 0 || y >= len(grid) {
+	current := grid[y][x]
+	if current.glyph != ' ' && depth >= current.depth {
 		return
 	}
-	if x < 0 || x >= len(grid[y]) {
-		return
-	}
-	if grid[y][x].glyph == ' ' {
-		grid[y][x] = cell{glyph: glyph, color: color}
-	}
+	grid[y][x] = cell{glyph: glyph, color: color, depth: depth}
 }
 
 func render(grid [][]cell) {
@@ -300,13 +436,61 @@ func render(grid [][]cell) {
 	fmt.Print(sb.String())
 }
 
+func lerp(a, b, t float64) float64 {
+	return a + (b-a)*t
+}
+
+func clampFloat(v, minV, maxV float64) float64 {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
+}
+
+func clampInt(v, minV, maxV int) int {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
+}
+
+func subtract(a, b vec3) vec3 {
+	return vec3{x: a.x - b.x, y: a.y - b.y, z: a.z - b.z}
+}
+
+func cross(a, b vec3) vec3 {
+	return vec3{
+		x: a.y*b.z - a.z*b.y,
+		y: a.z*b.x - a.x*b.z,
+		z: a.x*b.y - a.y*b.x,
+	}
+}
+
+func dot(a, b vec3) float64 {
+	return a.x*b.x + a.y*b.y + a.z*b.z
+}
+
+func normalize(v vec3) vec3 {
+	mag := math.Sqrt(v.x*v.x + v.y*v.y + v.z*v.z)
+	if mag == 0 {
+		return vec3{}
+	}
+	return vec3{x: v.x / mag, y: v.y / mag, z: v.z / mag}
+}
+
 func glowForDepth(depth float64) string {
 	switch {
-	case depth > 14:
+	case depth < cameraDistance-1.2:
 		return vertexGlowPalette[0]
-	case depth > 10:
+	case depth < cameraDistance-0.4:
 		return vertexGlowPalette[1]
-	case depth > 7:
+	case depth < cameraDistance+0.6:
 		return vertexGlowPalette[2]
 	default:
 		return vertexGlowPalette[3]
