@@ -78,7 +78,7 @@ func DefaultConfig() Config {
 		Width:      96,
 		Height:     32,
 		FrameDelay: 45 * time.Millisecond,
-		Instances:  defaultInstances(),
+		Instances:  MultiCubeInstances(),
 	}
 }
 
@@ -93,13 +93,37 @@ func (c Config) normalize() Config {
 		c.FrameDelay = 60 * time.Millisecond
 	}
 	if len(c.Instances) == 0 {
-		c.Instances = defaultInstances()
+		c.Instances = MultiCubeInstances()
 	} else {
 		for i := range c.Instances {
 			c.Instances[i] = c.Instances[i].normalize()
 		}
 	}
 	return c
+}
+
+func (ic InstanceConfig) normalize() InstanceConfig {
+	if ic.Scale <= 0 {
+		ic.Scale = 1
+	}
+	ic.OffsetX = clampFloat(ic.OffsetX, -0.9, 0.9)
+	ic.OffsetY = clampFloat(ic.OffsetY, -0.9, 0.9)
+	if ic.RotationSpeed == (vec3{}) {
+		ic.RotationSpeed = baseRotationSpeed
+	}
+	return ic
+}
+
+// MultiCubeInstances returns the default three-instance layout used by DefaultConfig.
+func MultiCubeInstances() []InstanceConfig {
+	return cloneInstances(defaultInstances())
+}
+
+// SingleCubeInstances returns a centered single-cube layout.
+func SingleCubeInstances() []InstanceConfig {
+	return []InstanceConfig{
+		defaultSingleInstance(),
+	}
 }
 
 func defaultInstances() []InstanceConfig {
@@ -128,16 +152,12 @@ func defaultInstances() []InstanceConfig {
 	}
 }
 
-func (ic InstanceConfig) normalize() InstanceConfig {
-	if ic.Scale <= 0 {
-		ic.Scale = 1
+func defaultSingleInstance() InstanceConfig {
+	return InstanceConfig{
+		Scale:         1.1,
+		RotationSpeed: baseRotationSpeed,
+		RotationPhase: vec3{},
 	}
-	ic.OffsetX = clampFloat(ic.OffsetX, -0.9, 0.9)
-	ic.OffsetY = clampFloat(ic.OffsetY, -0.9, 0.9)
-	if ic.RotationSpeed == (vec3{}) {
-		ic.RotationSpeed = baseRotationSpeed
-	}
-	return ic
 }
 
 type cell struct {
@@ -717,4 +737,10 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func cloneInstances(src []InstanceConfig) []InstanceConfig {
+	out := make([]InstanceConfig, len(src))
+	copy(out, src)
+	return out
 }
