@@ -23,7 +23,7 @@ go run ./cmd/animterm -mode cybercube
 昔ながらの単一キューブを眺めたい場合は `-cube-layout single` を指定してください。
 
 ```bash
-go run ./cmd/cybercube
+go run ./cmd/animterm -mode cybercube
 ```
 
 ### Neon Rain
