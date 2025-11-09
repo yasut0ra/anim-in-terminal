@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -70,6 +70,15 @@ go run ./cmd/animterm -mode starfield
 go run ./cmd/animterm -mode orbit
 ```
 
+### Plasma Grid
+
+ノイズと多層サイン波をブレンドしたプラズマ模様を HSV 風 ANSI カラーで描画。  
+脈動する走査線やブリッジグローを重ね、エネルギー矩形パネルのような表現になります。
+
+```bash
+go run ./cmd/animterm -mode plasma
+```
+
 ## ファイル構成
 
 ```
@@ -83,6 +92,7 @@ internal/
   spectrum/    # スペクトラムアニメ
   starfield/   # スターフィールドワープ
   orbit/       # コア＆パーティクル HUD
+  plasma/      # プラズマグリッド
 go.mod
 README.md
 ```
