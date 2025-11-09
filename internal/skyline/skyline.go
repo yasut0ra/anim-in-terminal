@@ -82,12 +82,14 @@ type cell struct {
 }
 
 type building struct {
-	x        int
-	width    int
-	height   int
-	palette  []string
-	layer    int
-	windowOn []bool
+	x         int
+	width     int
+	height    int
+	palette   []string
+	layer     int
+	windowOn  []bool
+	outline   string
+	fillGlyph byte
 }
 
 // Run starts the neon skyline animation.
@@ -190,13 +192,17 @@ func makeBuildings(cfg Config) []building {
 				chance := max(1, 3-layer)
 				windows[i] = rand.Intn(chance) == 0
 			}
+			fillGlyph := []byte{'=', '#', '%'}[min(layer, 3)-1]
+			outline := glowPalette[rand.Intn(len(glowPalette))]
 			result = append(result, building{
-				x:        x,
-				width:    width,
-				height:   height,
-				palette:  palette,
-				layer:    layer,
-				windowOn: windows,
+				x:         x,
+				width:     width,
+				height:    height,
+				palette:   palette,
+				layer:     layer,
+				windowOn:  windows,
+				outline:   outline,
+				fillGlyph: fillGlyph,
 			})
 			x += width + rand.Intn(6)
 		}
@@ -229,13 +235,16 @@ func drawBuilding(grid [][]cell, b building, baseLine int, frame int) {
 			if col < 0 || col >= len(grid[0]) {
 				continue
 			}
-			var glyph byte = '#'
+			var glyph byte = b.fillGlyph
+			edgeColor := color
 			if x == 0 || x == b.width-1 {
 				glyph = '|'
+				edgeColor = b.outline
 			} else if y == 0 {
 				glyph = '_'
+				edgeColor = b.outline
 			}
-			grid[top+y][col] = cell{glyph: glyph, color: color}
+			grid[top+y][col] = cell{glyph: glyph, color: edgeColor}
 		}
 	}
 	drawWindows(grid, b, baseLine, frame)
