@@ -10,14 +10,17 @@ go run ./cmd/animterm -mode cybercube
 ```
 
 `-mode` には `cybercube`, `rain`, `spectrum`, `cloud` を指定できます。  
-オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。
+オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
+`cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
 ## アニメーション一覧
 
 ### Cyber Cube
 
 立方体のワイヤーフレームが奥行きを保ちながら回転。  
-陰影付きの六面とホログラム状ゴーストライン、脈動するカメラワークで近未来 HUD 風に仕上げています。
+陰影付きの六面とホログラム状ゴーストライン、脈動するカメラワークで近未来 HUD 風に仕上げています。  
+最新バージョンではスケールや位置・回転速度が異なる複数のキューブを同時描画し、立体ディスプレイのようなレイヤー感を表現しています。  
+昔ながらの単一キューブを眺めたい場合は `-cube-layout single` を指定してください。
 
 ```bash
 go run ./cmd/cybercube
