@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -79,6 +79,15 @@ go run ./cmd/animterm -mode orbit
 go run ./cmd/animterm -mode plasma
 ```
 
+### Neon Skyline
+
+多層のビル群がネオンカラーで瞬き、HUD 風バーやホログラム広告が流れる近未来シティスケープ。  
+ランダムウィンドウと星空、ホライゾングローを重ねて、奥行きのある夜景を描画します。
+
+```bash
+go run ./cmd/animterm -mode skyline
+```
+
 ## ファイル構成
 
 ```
@@ -93,6 +102,7 @@ internal/
   starfield/   # スターフィールドワープ
   orbit/       # コア＆パーティクル HUD
   plasma/      # プラズマグリッド
+  skyline/     # ネオンシティ夜景
 go.mod
 README.md
 ```
