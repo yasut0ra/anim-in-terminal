@@ -11,12 +11,13 @@ import (
 	"animinterminal/internal/orbit"
 	"animinterminal/internal/plasma"
 	"animinterminal/internal/rain"
+	"animinterminal/internal/skyline"
 	"animinterminal/internal/spectrum"
 	"animinterminal/internal/starfield"
 )
 
 func main() {
-	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma")
+	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline")
 	width := flag.Int("width", 0, "override character width")
 	height := flag.Int("height", 0, "override character height")
 	delay := flag.Duration("delay", 0, "override frame delay (e.g. 50ms)")
@@ -55,8 +56,12 @@ func main() {
 		cfg := plasma.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		plasma.Run(cfg)
+	case "skyline", "city", "neon":
+		cfg := skyline.DefaultConfig()
+		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
+		skyline.Run(cfg)
 	default:
-		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma)\n", *mode)
+		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline)\n", *mode)
 	}
 }
 
