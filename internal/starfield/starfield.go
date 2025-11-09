@@ -2,6 +2,7 @@ package starfield
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ const (
 	minHeight      = 24
 	minDepth       = 0.12
 	backdropStride = 4
+	ringCount      = 4
+	spokeCount     = 12
 )
 
 var (
@@ -33,6 +36,20 @@ var (
 	backdropPalette = []string{
 		"\x1b[38;5;236m",
 		"\x1b[38;5;235m",
+	}
+	warpRingPalette = []string{
+		"\x1b[38;5;24m",
+		"\x1b[38;5;25m",
+		"\x1b[38;5;31m",
+	}
+	spokePalette = []string{
+		"\x1b[38;5;238m",
+		"\x1b[38;5;244m",
+	}
+	flarePalette = []string{
+		"\x1b[38;5;45m",
+		"\x1b[38;5;117m",
+		"\x1b[38;5;195m",
 	}
 	glyphPalette = []byte{'.', '+', '*'}
 )
@@ -87,6 +104,8 @@ type star struct {
 	prevX    int
 	prevY    int
 	hasPrev  bool
+	twinkle  float64
+	layer    int
 }
 
 // Run launches the starfield warp animation.
@@ -104,6 +123,7 @@ func Run(cfg Config) {
 	for frame := 0; ; frame++ {
 		grid := newGrid(cfg.Width, cfg.Height)
 		drawBackdrop(grid, frame)
+		drawWarpTunnel(grid, frame)
 		drawStars(grid, stars, cfg, frame)
 		render(grid)
 
@@ -119,7 +139,6 @@ func makeStars(cfg Config) []star {
 	stars := make([]star, count)
 	for i := range stars {
 		resetStar(&stars[i], cfg)
-		stars[i].z = rand.Float64()*0.7 + 0.4
 	}
 	return stars
 }
@@ -127,8 +146,12 @@ func makeStars(cfg Config) []star {
 func resetStar(s *star, cfg Config) {
 	s.x = rand.Float64()*2 - 1
 	s.y = rand.Float64()*2 - 1
-	s.z = rand.Float64()*1.1 + 0.5
-	s.velocity = cfg.WarpSpeed * (0.7 + rand.Float64()*0.8)
+	s.layer = rand.Intn(3)
+	layerBias := 0.4 + float64(s.layer)*0.18
+	s.z = rand.Float64()*0.9 + layerBias
+	speedVariance := 0.6 + float64(s.layer)*0.25 + rand.Float64()*0.4
+	s.velocity = cfg.WarpSpeed * speedVariance
+	s.twinkle = rand.Float64() * math.Pi * 2
 	s.hasPrev = false
 }
 
@@ -157,6 +180,70 @@ func drawBackdrop(grid [][]cell, frame int) {
 	setIfEmpty(grid, centerX, centerY, '+', "\x1b[38;5;238m")
 }
 
+func drawWarpTunnel(grid [][]cell, frame int) {
+	width := len(grid[0])
+	height := len(grid)
+	centerX := width / 2
+	centerY := height / 2
+	minDim := float64(min(width, height))
+	baseRadius := minDim * 0.12
+	if baseRadius < 2 {
+		return
+	}
+	pulse := 1 + 0.05*math.Sin(float64(frame)*0.07)
+
+	for ring := 1; ring <= ringCount; ring++ {
+		radius := float64(ring) * baseRadius * pulse
+		color := warpRingPalette[(ring+frame/8)%len(warpRingPalette)]
+		drawEllipse(grid, centerX, centerY, radius, radius*0.55, color)
+	}
+
+	for spoke := 0; spoke < spokeCount; spoke++ {
+		angle := float64(spoke)/spokeCount*math.Pi*2 + float64(frame)*0.012
+		color := spokePalette[(spoke+frame/10)%len(spokePalette)]
+		drawSpoke(grid, centerX, centerY, angle, minDim*0.52, color)
+	}
+}
+
+func drawEllipse(grid [][]cell, cx, cy int, rx, ry float64, color string) {
+	steps := int(rx * 6)
+	if steps < 24 {
+		steps = 24
+	}
+	for i := 0; i < steps; i++ {
+		angle := float64(i) / float64(steps) * math.Pi * 2
+		x := cx + int(math.Cos(angle)*rx)
+		y := cy + int(math.Sin(angle)*ry)
+		setIfEmpty(grid, x, y, '-', color)
+	}
+}
+
+func drawSpoke(grid [][]cell, cx, cy int, angle float64, length float64, color string) {
+	endX := cx + int(math.Cos(angle)*length)
+	endY := cy + int(math.Sin(angle)*length*0.55)
+	points := linePoints(cx, cy, endX, endY)
+	for i := 2; i < len(points); i += 2 {
+		p := points[i]
+		glyph := spokeGlyph(endX-cx, endY-cy)
+		setIfEmpty(grid, p[0], p[1], glyph, color)
+	}
+}
+
+func spokeGlyph(dx, dy int) byte {
+	adx := abs(dx)
+	ady := abs(dy)
+	switch {
+	case adx > ady*2:
+		return '-'
+	case ady > adx*2:
+		return '|'
+	case dx*dy < 0:
+		return '/'
+	default:
+		return '\\'
+	}
+}
+
 func drawStars(grid [][]cell, stars []star, cfg Config, frame int) {
 	width := len(grid[0])
 	height := len(grid)
@@ -171,15 +258,19 @@ func drawStars(grid [][]cell, stars []star, cfg Config, frame int) {
 			drawTrail(grid, stars[i].prevX, stars[i].prevY, px, py, stars[i].z)
 		}
 
-		color := starColor(stars[i].z, frame)
-		glyph := starGlyph(stars[i].z)
+		color := starColor(stars[i].z, stars[i].twinkle, frame)
+		glyph := starGlyph(stars[i].z, stars[i].twinkle)
 		setCell(grid, px, py, glyph, color)
+		if stars[i].z < 0.4 {
+			drawFlare(grid, px, py, stars[i].z)
+		}
 
 		stars[i].prevX = px
 		stars[i].prevY = py
 		stars[i].hasPrev = true
 
 		stars[i].z -= stars[i].velocity
+		stars[i].twinkle += 0.18
 		if stars[i].z <= minDepth {
 			resetStar(&stars[i], cfg)
 		}
@@ -213,12 +304,30 @@ func drawTrail(grid [][]cell, x0, y0, x1, y1 int, depth float64) {
 	}
 }
 
-func starColor(depth float64, frame int) string {
+func drawFlare(grid [][]cell, x, y int, depth float64) {
+	if depth > 0.45 {
+		return
+	}
+	index := clampInt(int((0.5-depth)*float64(len(flarePalette))*1.5), 0, len(flarePalette)-1)
+	color := flarePalette[index]
+	setIfEmpty(grid, x+1, y, '-', color)
+	setIfEmpty(grid, x-1, y, '-', color)
+	setIfEmpty(grid, x, y+1, '|', color)
+	setIfEmpty(grid, x, y-1, '|', color)
+	setIfEmpty(grid, x+1, y+1, '.', color)
+	setIfEmpty(grid, x-1, y-1, '.', color)
+	setIfEmpty(grid, x+1, y-1, '.', color)
+	setIfEmpty(grid, x-1, y+1, '.', color)
+}
+
+func starColor(depth float64, twinkle float64, frame int) string {
 	if len(starPalette) == 0 {
 		return ""
 	}
-	ratio := clampFloat(1-depth, 0, 0.95)
-	index := int(ratio / 0.4)
+	intensity := clampFloat(1-depth, 0, 0.95)
+	flicker := 0.12 * math.Sin(twinkle+float64(frame)*0.12)
+	ratio := clampFloat(intensity+flicker, 0, 0.95)
+	index := int(ratio / 0.35)
 	if index >= len(starPalette) {
 		index = len(starPalette) - 1
 	}
@@ -226,11 +335,11 @@ func starColor(depth float64, frame int) string {
 	return starPalette[(index+offset)%len(starPalette)]
 }
 
-func starGlyph(depth float64) byte {
+func starGlyph(depth float64, twinkle float64) byte {
 	if len(glyphPalette) == 0 {
 		return '*'
 	}
-	ratio := clampFloat(1-depth, 0, 1)
+	ratio := clampFloat(1-depth+0.1*math.Sin(twinkle), 0, 1)
 	index := int(ratio * float64(len(glyphPalette)))
 	if index >= len(glyphPalette) {
 		index = len(glyphPalette) - 1
