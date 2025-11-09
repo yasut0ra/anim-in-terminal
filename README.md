@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -61,6 +61,15 @@ go run ./cmd/animterm -mode cloud
 go run ./cmd/animterm -mode starfield
 ```
 
+### Particle Orbit HUD
+
+中央のエネルギーコアを軸に複数のリングと粒子が周回し、テレメトリー HUD が動的に更新されるシネマティックなモードです。  
+奥行きのあるリング、ツインクルするパーティクル、ベースライン UI が合わさり、SF のコントロールルーム風ビジュアルになります。
+
+```bash
+go run ./cmd/animterm -mode orbit
+```
+
 ## ファイル構成
 
 ```
@@ -73,6 +82,7 @@ internal/
   rain/        # デジタルレイン
   spectrum/    # スペクトラムアニメ
   starfield/   # スターフィールドワープ
+  orbit/       # コア＆パーティクル HUD
 go.mod
 README.md
 ```
