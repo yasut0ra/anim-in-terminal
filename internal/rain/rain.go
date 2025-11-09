@@ -33,6 +33,16 @@ var (
 		"\x1b[38;5;236m",
 		"\x1b[38;5;237m",
 	}
+	horizonPalette = []string{
+		"\x1b[38;5;24m",
+		"\x1b[38;5;25m",
+		"\x1b[38;5;31m",
+	}
+	reflectionPalette = []string{
+		"\x1b[38;5;30m",
+		"\x1b[38;5;36m",
+		"\x1b[38;5;44m",
+	}
 	glyphPool = []byte{'0', '1', '|', '/', '\\', '[', ']'}
 )
 
@@ -83,6 +93,8 @@ type stream struct {
 	paletteIdx int
 	layer      int
 	swayPhase  float64
+	thickness  int
+	charset    []byte
 }
 
 type splash struct {
@@ -90,6 +102,11 @@ type splash struct {
 	vx, vy float64
 	life   int
 	color  string
+}
+
+type lightning struct {
+	points [][2]int
+	decay  int
 }
 
 // Run launches the rain animation loop.
@@ -102,14 +119,24 @@ func Run(cfg Config) {
 
 	streams := makeStreams(cfg)
 	splashes := make([]splash, 0, 128)
+	var bolt lightning
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
 
 	for frame := 0; ; frame++ {
 		grid := newGrid(cfg.Width, cfg.Height)
+		drawBackground(grid, frame)
 		drawMist(grid, frame)
+		drawDrizzle(grid, frame)
 		drawStreams(grid, streams, frame, &splashes)
 		drawSplashes(grid, splashes)
+		drawReflections(grid, frame)
+		if bolt.decay > 0 {
+			drawLightning(grid, bolt)
+			bolt.decay--
+		} else if rand.Intn(90) == 0 {
+			bolt = newLightning(cfg.Width, cfg.Height/2)
+		}
 		render(grid)
 		updateSplashes(&splashes, cfg.Width, cfg.Height)
 		updateStreams(streams, cfg.Width, cfg.Height)
@@ -143,6 +170,30 @@ func drawMist(grid [][]cell, frame int) {
 	}
 }
 
+func drawBackground(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for y := 0; y < height/3; y++ {
+		color := horizonPalette[(y+frame/12)%len(horizonPalette)]
+		for x := 0; x < width; x += 4 {
+			setIfEmpty(grid, x+(y%3), y, '.', color)
+		}
+	}
+}
+
+func drawDrizzle(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for x := 0; x < width; x += 5 {
+		for y := height / 3; y < height; y += 7 {
+			if (x+y+frame)%9 == 0 {
+				ch := []byte{'`', '.', '\''}[(x/3+y+frame)%3]
+				setIfEmpty(grid, x+(frame%3), y, ch, "\x1b[38;5;240m")
+			}
+		}
+	}
+}
+
 func drawStreams(grid [][]cell, streams []stream, frame int, splashes *[]splash) {
 	height := len(grid)
 	width := len(grid[0])
@@ -161,8 +212,18 @@ func drawStreams(grid [][]cell, streams []stream, frame int, splashes *[]splash)
 			} else {
 				color = palette[min(i/2+s.layer, len(palette)-1)]
 			}
-			glyph := glyphPool[(frame+y+i)%len(glyphPool)]
-			setCell(grid, column, y, glyph, color)
+			glyphs := s.charset
+			if len(glyphs) == 0 {
+				glyphs = glyphPool
+			}
+			glyph := glyphs[(frame+y+i)%len(glyphs)]
+			for t := 0; t < s.thickness; t++ {
+				col := column + t - s.thickness/2
+				if col < 0 || col >= width {
+					continue
+				}
+				setCell(grid, col, y, glyph, color)
+			}
 			if i == 0 && y >= height-2 {
 				emitSplash(splashes, column, height)
 			}
@@ -212,6 +273,24 @@ func drawSplashes(grid [][]cell, splashes []splash) {
 	}
 }
 
+func drawReflections(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	base := height - 4
+	if base < 0 {
+		return
+	}
+	for x := 0; x < width; x++ {
+		if (x+frame)%5 == 0 {
+			color := reflectionPalette[(x/3+frame/7)%len(reflectionPalette)]
+			setIfEmpty(grid, x, base, '_', color)
+			if base+1 < height {
+				setIfEmpty(grid, x, base+1, '.', color)
+			}
+		}
+	}
+}
+
 func updateSplashes(splashes *[]splash, width, height int) {
 	items := *splashes
 	dst := items[:0]
@@ -243,6 +322,35 @@ func updateStreams(streams []stream, width, height int) {
 	}
 }
 
+func newLightning(width, height int) lightning {
+	points := make([][2]int, 0, height)
+	x := rand.Intn(width)
+	y := rand.Intn(height / 3)
+	for y < height && len(points) < height*2 {
+		points = append(points, [2]int{x, y})
+		x += rand.Intn(3) - 1
+		if x < 1 {
+			x = 1
+		}
+		if x >= width-1 {
+			x = width - 2
+		}
+		y += 1 + rand.Intn(2)
+	}
+	return lightning{points: points, decay: 5}
+}
+
+func drawLightning(grid [][]cell, bolt lightning) {
+	for i := 0; i < len(bolt.points)-1; i++ {
+		from := bolt.points[i]
+		to := bolt.points[i+1]
+		color := glowPalette[i%len(glowPalette)]
+		for _, p := range linePoints(from[0], from[1], to[0], to[1]) {
+			setCell(grid, p[0], p[1], '|', color)
+		}
+	}
+}
+
 func makeStreams(cfg Config) []stream {
 	count := int(float64(cfg.Width) * cfg.Density)
 	if count < 4 {
@@ -263,6 +371,8 @@ func resetStream(s *stream, width, height int, visible bool) {
 	s.speed = baseSpeed + rand.Float64()*0.6
 	s.paletteIdx = rand.Intn(len(streamPalettes))
 	s.swayPhase = rand.Float64() * math.Pi * 2
+	s.thickness = 1 + rand.Intn(1+s.layer)
+	s.charset = pickCharset()
 	if visible {
 		s.head = rand.Float64() * float64(height)
 	} else {
@@ -328,4 +438,58 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func pickCharset() []byte {
+	charsets := [][]byte{
+		{'|', '/', '\\', ':'},
+		{'1', '=', '-', ':'},
+		{'[', ']', '0', '|'},
+	}
+	return charsets[rand.Intn(len(charsets))]
+}
+
+func linePoints(x0, y0, x1, y1 int) [][2]int {
+	points := make([][2]int, 0, max(abs(x1-x0), abs(y1-y0))+1)
+	dx := abs(x1 - x0)
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	dy := -abs(y1 - y0)
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx + dy
+	for {
+		points = append(points, [2]int{x0, y0})
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 >= dy {
+			err += dy
+			x0 += sx
+		}
+		if e2 <= dx {
+			err += dx
+			y0 += sy
+		}
+	}
+	return points
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
