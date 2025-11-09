@@ -141,11 +141,14 @@ func drawSky(grid [][]cell, frame int) {
 	height := len(grid)
 	width := len(grid[0])
 	for y := 0; y < height/2; y++ {
-		hue := skyPalette[(y/2+frame/20)%len(skyPalette)]
+		gradient := float64(y) / float64(height/2)
+		index := (int(gradient*float64(len(skyPalette))) + frame/18) % len(skyPalette)
+		hue := skyPalette[index]
 		for x := 0; x < width; x++ {
 			grid[y][x] = cell{glyph: ' ', color: hue}
 		}
 	}
+	drawAurora(grid, frame)
 }
 
 func drawStars(grid [][]cell, frame int) {
@@ -162,6 +165,24 @@ func drawStars(grid [][]cell, frame int) {
 	}
 }
 
+func drawAurora(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	bandY := height / 3
+	for x := 0; x < width; x++ {
+		offset := math.Sin(float64(x)/6+float64(frame)*0.02) * 2
+		y := bandY + int(offset)
+		if y < 0 || y >= height/2 {
+			continue
+		}
+		color := glowPalette[(x/6+frame/8)%len(glowPalette)]
+		grid[y][x] = cell{glyph: '~', color: color}
+		if y+1 < height/2 {
+			grid[y+1][x] = cell{glyph: '~', color: color}
+		}
+	}
+}
+
 func drawHorizonGlow(grid [][]cell, frame int) {
 	height := len(grid)
 	width := len(grid[0])
@@ -172,6 +193,21 @@ func drawHorizonGlow(grid [][]cell, frame int) {
 		for x := 0; x < width; x++ {
 			if grid[y][x].glyph == ' ' {
 				grid[y][x] = cell{glyph: ' ', color: color}
+			}
+		}
+	}
+	drawLightBeams(grid, frame)
+}
+
+func drawLightBeams(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for i := 0; i < width/12; i++ {
+		x := (i*17 + frame*2) % width
+		color := glowPalette[(i+frame/10)%len(glowPalette)]
+		for y := height / 2; y < height-3; y++ {
+			if (y+i)%4 == 0 {
+				grid[y][x] = cell{glyph: '|', color: color}
 			}
 		}
 	}
