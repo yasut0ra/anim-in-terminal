@@ -53,6 +53,16 @@ var (
 		"\x1b[38;5;244m",
 		"\x1b[38;5;246m",
 	}
+	haloPalette = []string{
+		"\x1b[38;5;25m",
+		"\x1b[38;5;27m",
+		"\x1b[38;5;33m",
+		"\x1b[38;5;39m",
+	}
+	beamPalette = []string{
+		"\x1b[38;5;45m",
+		"\x1b[38;5;51m",
+	}
 )
 
 // Config controls the orbit HUD animation.
@@ -129,6 +139,7 @@ func Run(cfg Config) {
 		drawBackground(grid, frame)
 		drawRings(grid, rings, frame)
 		drawCore(grid, frame)
+		drawSensors(grid, frame)
 		drawParticles(grid, particles, frame)
 		drawHUD(grid, particles, frame)
 		render(grid)
@@ -223,6 +234,19 @@ func drawRing(grid [][]cell, cx, cy int, radius, thickness float64, phase float6
 	}
 }
 
+func drawEllipse(grid [][]cell, cx, cy int, rx, ry float64, color string) {
+	steps := int(rx * 6)
+	if steps < 24 {
+		steps = 24
+	}
+	for i := 0; i < steps; i++ {
+		angle := float64(i) / float64(steps) * math.Pi * 2
+		x := cx + int(math.Cos(angle)*rx)
+		y := cy + int(math.Sin(angle)*ry)
+		setIfEmpty(grid, x, y, '.', color)
+	}
+}
+
 func drawCore(grid [][]cell, frame int) {
 	width := len(grid[0])
 	height := len(grid)
@@ -244,6 +268,15 @@ func drawCore(grid [][]cell, frame int) {
 		}
 	}
 	setCell(grid, centerX, centerY, '#', "\x1b[38;5;231m")
+	drawCoreHalo(grid, centerX, centerY, radius, frame)
+}
+
+func drawCoreHalo(grid [][]cell, cx, cy int, baseRadius float64, frame int) {
+	for i := 0; i < len(haloPalette); i++ {
+		r := baseRadius*1.1 + float64(i)*1.6
+		color := haloPalette[(i+frame/14)%len(haloPalette)]
+		drawEllipse(grid, cx, cy, r, r*0.62, color)
+	}
 }
 
 func drawParticles(grid [][]cell, particles []particle, frame int) {
@@ -264,6 +297,35 @@ func drawParticles(grid [][]cell, particles []particle, frame int) {
 		color := particlePalette[p.layer%len(particlePalette)]
 		glyph := particleGlyph(frame, i)
 		setCell(grid, x, y, glyph, color)
+	}
+}
+
+func drawSensors(grid [][]cell, frame int) {
+	width := len(grid[0])
+	height := len(grid)
+	cx := width / 2
+	cy := height / 2
+	maxRadius := float64(min(width, height)) * 0.8
+
+	for i := 0; i < 2; i++ {
+		angle := float64(frame)*0.01 + float64(i)*math.Pi
+		color := beamPalette[i%len(beamPalette)]
+		drawSensorSweep(grid, cx, cy, angle, maxRadius, color)
+	}
+}
+
+func drawSensorSweep(grid [][]cell, cx, cy int, angle float64, radius float64, color string) {
+	for r := radius * 0.6; r < radius; r += 3 {
+		x := cx + int(math.Cos(angle)*r)
+		y := cy + int(math.Sin(angle)*r*0.6)
+		setIfEmpty(grid, x, y, '/', color)
+	}
+	points := linePoints(cx, cy, cx+int(math.Cos(angle)*radius), cy+int(math.Sin(angle)*radius*0.6))
+	for idx, pt := range points {
+		if idx%3 != 0 {
+			continue
+		}
+		setIfEmpty(grid, pt[0], pt[1], '.', color)
 	}
 }
 
@@ -326,12 +388,15 @@ func printText(grid [][]cell, x, y int, text string, color string) {
 
 func updateParticles(particles []particle) {
 	for i := range particles {
-		particles[i].angle += particles[i].angularVel
-		if particles[i].angle > math.Pi*2 {
-			particles[i].angle -= math.Pi * 2
-		} else if particles[i].angle < 0 {
-			particles[i].angle += math.Pi * 2
+		p := &particles[i]
+		p.angle += p.angularVel
+		if p.angle > math.Pi*2 {
+			p.angle -= math.Pi * 2
+		} else if p.angle < 0 {
+			p.angle += math.Pi * 2
 		}
+		noise := (rand.Float64() - 0.5) * 0.002
+		p.radius = clampFloat(p.radius+noise, 0.25, 0.95)
 	}
 }
 
