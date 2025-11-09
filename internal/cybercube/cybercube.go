@@ -166,6 +166,80 @@ type cell struct {
 	depth float64
 }
 
+type gridBuffer struct {
+	width  int
+	height int
+	cells  [][]cell
+}
+
+func newGrid(width, height int) *gridBuffer {
+	g := &gridBuffer{
+		width:  width,
+		height: height,
+		cells:  make([][]cell, height),
+	}
+	for y := range g.cells {
+		g.cells[y] = make([]cell, width)
+	}
+	g.Clear()
+	return g
+}
+
+func (g *gridBuffer) Clear() {
+	for y := 0; y < g.height; y++ {
+		for x := 0; x < g.width; x++ {
+			g.cells[y][x].glyph = ' '
+			g.cells[y][x].color = ""
+			g.cells[y][x].depth = math.MaxFloat64
+		}
+	}
+}
+
+func (g *gridBuffer) Set(x, y int, glyph byte, color string, depth float64) {
+	if y < 0 || y >= g.height {
+		return
+	}
+	if x < 0 || x >= g.width {
+		return
+	}
+	current := g.cells[y][x]
+	if current.glyph != ' ' && depth >= current.depth {
+		return
+	}
+	g.cells[y][x] = cell{glyph: glyph, color: color, depth: depth}
+}
+
+func (g *gridBuffer) SetIfEmpty(x, y int, glyph byte, color string) {
+	if y < 0 || y >= g.height {
+		return
+	}
+	if x < 0 || x >= g.width {
+		return
+	}
+	if g.cells[y][x].glyph == ' ' {
+		g.cells[y][x] = cell{glyph: glyph, color: color, depth: math.MaxFloat64}
+	}
+}
+
+func (g *gridBuffer) Render() {
+	var sb strings.Builder
+	sb.Grow((g.width+10)*g.height + 8)
+	sb.WriteString(ansiHome)
+
+	for _, row := range g.cells {
+		for _, c := range row {
+			if c.color != "" {
+				sb.WriteString(c.color)
+			}
+			sb.WriteByte(c.glyph)
+		}
+		sb.WriteString(ansiReset)
+		sb.WriteByte('\n')
+	}
+
+	fmt.Print(sb.String())
+}
+
 type vec3 struct {
 	x, y, z float64
 }
@@ -230,12 +304,14 @@ func Run(cfg Config) {
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
 
+	grid := newGrid(cfg.Width, cfg.Height)
+
 	for frame := 0; ; frame++ {
-		grid := newGrid(cfg.Width, cfg.Height)
+		grid.Clear()
 		drawBackdrop(grid, frame)
 		drawCubes(grid, instances, frame)
 
-		render(grid)
+		grid.Render()
 
 		updateInstanceRotations(instances)
 
@@ -243,23 +319,9 @@ func Run(cfg Config) {
 	}
 }
 
-func newGrid(width, height int) [][]cell {
-	grid := make([][]cell, height)
-	for y := range grid {
-		grid[y] = make([]cell, width)
-		for x := range grid[y] {
-			grid[y][x] = cell{
-				glyph: ' ',
-				depth: math.MaxFloat64,
-			}
-		}
-	}
-	return grid
-}
-
-func drawBackdrop(grid [][]cell, frame int) {
-	height := len(grid)
-	width := len(grid[0])
+func drawBackdrop(grid *gridBuffer, frame int) {
+	height := grid.height
+	width := grid.width
 	for y := 0; y < height; y++ {
 		if y%4 != 0 {
 			continue
@@ -270,17 +332,17 @@ func drawBackdrop(grid [][]cell, frame int) {
 			if (x/2+y+frame/8)%5 == 0 {
 				glyph = ':'
 			}
-			setIfEmpty(grid, x, y, glyph, color)
+			grid.SetIfEmpty(x, y, glyph, color)
 		}
 	}
 }
 
-func drawCubes(grid [][]cell, instances []cubeInstanceState, frame int) {
+func drawCubes(grid *gridBuffer, instances []cubeInstanceState, frame int) {
 	if len(instances) == 0 {
 		return
 	}
-	width := len(grid[0])
-	height := len(grid)
+	width := grid.width
+	height := grid.height
 	baseScale := float64(min(width, height)) * 1.25
 	pulse := 0.85 + 0.15*math.Sin(float64(frame)*0.05)
 	scale := baseScale * pulse
@@ -290,7 +352,7 @@ func drawCubes(grid [][]cell, instances []cubeInstanceState, frame int) {
 	}
 }
 
-func drawCubeInstance(grid [][]cell, inst cubeInstanceState, width, height int, baseScale float64, frame int) {
+func drawCubeInstance(grid *gridBuffer, inst cubeInstanceState, width, height int, baseScale float64, frame int) {
 	instanceScale := baseScale * inst.cfg.Scale
 	if instanceScale <= 0 {
 		return
@@ -341,7 +403,7 @@ func drawCubeInstance(grid [][]cell, inst cubeInstanceState, width, height int, 
 	}
 
 	for _, pt := range projected {
-		setCell(grid, pt.x, pt.y, 'O', glowForDepth(pt.depth), pt.depth-0.08)
+		grid.Set(pt.x, pt.y, 'O', glowForDepth(pt.depth), pt.depth-0.08)
 	}
 }
 
@@ -408,7 +470,7 @@ func withinMargins(points []point2D, width, height, margin int) bool {
 	return true
 }
 
-func drawGhostFrame(grid [][]cell, projected []point2D, frame int) {
+func drawGhostFrame(grid *gridBuffer, projected []point2D, frame int) {
 	if len(projected) == 0 {
 		return
 	}
@@ -419,12 +481,12 @@ func drawGhostFrame(grid [][]cell, projected []point2D, frame int) {
 		points := linePoints(from.x, from.y, to.x, to.y)
 		for _, p := range points {
 			depth := (from.depth+to.depth)*0.5 + 1.5
-			setCell(grid, p[0], p[1], '.', color, depth)
+			grid.Set(p[0], p[1], '.', color, depth)
 		}
 	}
 }
 
-func drawFaces(grid [][]cell, rotated []vec3, projected []point2D, frame int) {
+func drawFaces(grid *gridBuffer, rotated []vec3, projected []point2D, frame int) {
 	for i, face := range cubeFaces {
 		a := rotated[face.indices[0]]
 		b := rotated[face.indices[1]]
@@ -457,11 +519,11 @@ func shadeForFace(intensity float64, frame int) string {
 	return faceFillPalette[(idx+offset)%levels]
 }
 
-func fillTriangle(grid [][]cell, a, b, c point2D, glyph byte, color string) {
+func fillTriangle(grid *gridBuffer, a, b, c point2D, glyph byte, color string) {
 	minX := max(0, min(a.x, min(b.x, c.x)))
-	maxX := min(len(grid[0])-1, max(a.x, max(b.x, c.x)))
+	maxX := min(grid.width-1, max(a.x, max(b.x, c.x)))
 	minY := max(0, min(a.y, min(b.y, c.y)))
-	maxY := min(len(grid)-1, max(a.y, max(b.y, c.y)))
+	maxY := min(grid.height-1, max(a.y, max(b.y, c.y)))
 
 	area := edgeFunction(a, b, c)
 	if area == 0 {
@@ -484,7 +546,7 @@ func fillTriangle(grid [][]cell, a, b, c point2D, glyph byte, color string) {
 			w2 /= area
 			depth := w0*a.depth + w1*b.depth + w2*c.depth
 
-			setCell(grid, x, y, glyph, color, depth+0.02)
+			grid.Set(x, y, glyph, color, depth+0.02)
 		}
 	}
 }
@@ -542,7 +604,7 @@ func project(v vec3, scale float64, width, height int) (int, int, float64) {
 	return x, y, distance
 }
 
-func drawEdge(grid [][]cell, from, to point2D, color string) {
+func drawEdge(grid *gridBuffer, from, to point2D, color string) {
 	points := linePoints(from.x, from.y, to.x, to.y)
 	if len(points) == 0 {
 		return
@@ -559,7 +621,7 @@ func drawEdge(grid [][]cell, from, to point2D, color string) {
 		if depth < 0 {
 			depth = 0
 		}
-		setCell(grid, p[0], p[1], glyph, color, depth)
+		grid.Set(p[0], p[1], glyph, color, depth)
 	}
 }
 
@@ -608,53 +670,6 @@ func linePoints(x0, y0, x1, y1 int) [][2]int {
 		}
 	}
 	return points
-}
-
-func setCell(grid [][]cell, x, y int, glyph byte, color string, depth float64) {
-	if y < 0 || y >= len(grid) {
-		return
-	}
-	if x < 0 || x >= len(grid[y]) {
-		return
-	}
-	current := grid[y][x]
-	if current.glyph != ' ' && depth >= current.depth {
-		return
-	}
-	grid[y][x] = cell{glyph: glyph, color: color, depth: depth}
-}
-
-func setIfEmpty(grid [][]cell, x, y int, glyph byte, color string) {
-	if y < 0 || y >= len(grid) {
-		return
-	}
-	if x < 0 || x >= len(grid[y]) {
-		return
-	}
-	if grid[y][x].glyph == ' ' {
-		grid[y][x] = cell{glyph: glyph, color: color, depth: math.MaxFloat64}
-	}
-}
-
-func render(grid [][]cell) {
-	var sb strings.Builder
-	height := len(grid)
-	width := len(grid[0])
-	sb.Grow((width+10)*height + 8)
-	sb.WriteString(ansiHome)
-
-	for _, row := range grid {
-		for _, c := range row {
-			if c.color != "" {
-				sb.WriteString(c.color)
-			}
-			sb.WriteByte(c.glyph)
-		}
-		sb.WriteString(ansiReset)
-		sb.WriteByte('\n')
-	}
-
-	fmt.Print(sb.String())
 }
 
 func lerp(a, b, t float64) float64 {
