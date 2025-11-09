@@ -14,6 +14,8 @@ const (
 	maxFitAttempts = 10
 )
 
+var baseRotationSpeed = vec3{0.022, 0.017, 0.013}
+
 var (
 	ansiReset = "\x1b[0m"
 	ansiHide  = "\x1b[?25l"
@@ -58,6 +60,16 @@ type Config struct {
 	Width      int
 	Height     int
 	FrameDelay time.Duration
+	Instances  []InstanceConfig
+}
+
+// InstanceConfig describes how each cube copy behaves/positions itself.
+type InstanceConfig struct {
+	Scale         float64
+	OffsetX       float64
+	OffsetY       float64
+	RotationSpeed vec3
+	RotationPhase vec3
 }
 
 // DefaultConfig returns a ready-to-run configuration tuned for a typical terminal.
@@ -66,6 +78,7 @@ func DefaultConfig() Config {
 		Width:      96,
 		Height:     32,
 		FrameDelay: 45 * time.Millisecond,
+		Instances:  defaultInstances(),
 	}
 }
 
@@ -79,7 +92,52 @@ func (c Config) normalize() Config {
 	if c.FrameDelay <= 0 {
 		c.FrameDelay = 60 * time.Millisecond
 	}
+	if len(c.Instances) == 0 {
+		c.Instances = defaultInstances()
+	} else {
+		for i := range c.Instances {
+			c.Instances[i] = c.Instances[i].normalize()
+		}
+	}
 	return c
+}
+
+func defaultInstances() []InstanceConfig {
+	return []InstanceConfig{
+		{
+			Scale:         0.9,
+			OffsetX:       -0.55,
+			OffsetY:       -0.12,
+			RotationSpeed: vec3{0.019, 0.021, 0.015},
+			RotationPhase: vec3{0.4, 0.1, 0.8},
+		},
+		{
+			Scale:         1.05,
+			OffsetX:       0,
+			OffsetY:       0.05,
+			RotationSpeed: baseRotationSpeed,
+			RotationPhase: vec3{0.15, 0.05, 0},
+		},
+		{
+			Scale:         0.78,
+			OffsetX:       0.55,
+			OffsetY:       -0.05,
+			RotationSpeed: vec3{0.017, 0.02, 0.014},
+			RotationPhase: vec3{0.7, 0.35, 0.2},
+		},
+	}
+}
+
+func (ic InstanceConfig) normalize() InstanceConfig {
+	if ic.Scale <= 0 {
+		ic.Scale = 1
+	}
+	ic.OffsetX = clampFloat(ic.OffsetX, -0.9, 0.9)
+	ic.OffsetY = clampFloat(ic.OffsetY, -0.9, 0.9)
+	if ic.RotationSpeed == (vec3{}) {
+		ic.RotationSpeed = baseRotationSpeed
+	}
+	return ic
 }
 
 type cell struct {
@@ -129,9 +187,22 @@ var (
 	viewVector = vec3{0, 0, 1}
 )
 
+type cubeInstanceState struct {
+	angles vec3
+	cfg    InstanceConfig
+}
+
 // Run starts the infinite cyber cube animation loop.
 func Run(cfg Config) {
 	cfg = cfg.normalize()
+
+	instances := make([]cubeInstanceState, len(cfg.Instances))
+	for i, instCfg := range cfg.Instances {
+		instances[i] = cubeInstanceState{
+			angles: instCfg.RotationPhase,
+			cfg:    instCfg,
+		}
+	}
 
 	fmt.Print(ansiHide, ansiClear)
 	defer fmt.Print(ansiShow, ansiReset)
@@ -139,24 +210,14 @@ func Run(cfg Config) {
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
 
-	var (
-		ax    float64
-		ay    float64
-		az    float64
-		frame int
-	)
-
-	for {
+	for frame := 0; ; frame++ {
 		grid := newGrid(cfg.Width, cfg.Height)
 		drawBackdrop(grid, frame)
-		drawCube(grid, ax, ay, az, frame)
+		drawCubes(grid, instances, frame)
 
 		render(grid)
 
-		ax += 0.022
-		ay += 0.017
-		az += 0.013
-		frame++
+		updateInstanceRotations(instances)
 
 		<-ticker.C
 	}
@@ -194,21 +255,39 @@ func drawBackdrop(grid [][]cell, frame int) {
 	}
 }
 
-func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
+func drawCubes(grid [][]cell, instances []cubeInstanceState, frame int) {
+	if len(instances) == 0 {
+		return
+	}
 	width := len(grid[0])
 	height := len(grid)
 	baseScale := float64(min(width, height)) * 1.25
 	pulse := 0.85 + 0.15*math.Sin(float64(frame)*0.05)
-	initialScale := baseScale * pulse
+	scale := baseScale * pulse
+
+	for _, inst := range instances {
+		drawCubeInstance(grid, inst, width, height, scale, frame)
+	}
+}
+
+func drawCubeInstance(grid [][]cell, inst cubeInstanceState, width, height int, baseScale float64, frame int) {
+	instanceScale := baseScale * inst.cfg.Scale
+	if instanceScale <= 0 {
+		return
+	}
 
 	rotated := make([]vec3, len(cubeVertices))
 	for i, v := range cubeVertices {
-		rotated[i] = rotate(v, ax, ay, az)
+		rotated[i] = rotate(v, inst.angles.x, inst.angles.y, inst.angles.z)
 	}
 
-	projected, fittedScale := projectToFit(rotated, width, height, initialScale, 2)
+	projected, fittedScale := projectToFit(rotated, width, height, instanceScale, 2)
 	ghostScale := fittedScale * 1.08
 	ghostProjected, _ := projectToFit(rotated, width, height, ghostScale, 1)
+
+	offsetX, offsetY := instanceOffset(inst.cfg, width, height)
+	shiftPoints(projected, offsetX, offsetY)
+	shiftPoints(ghostProjected, offsetX, offsetY)
 
 	drawGhostFrame(grid, ghostProjected, frame)
 	drawFaces(grid, rotated, projected, frame)
@@ -243,6 +322,28 @@ func drawCube(grid [][]cell, ax, ay, az float64, frame int) {
 
 	for _, pt := range projected {
 		setCell(grid, pt.x, pt.y, 'O', glowForDepth(pt.depth), pt.depth-0.08)
+	}
+}
+
+func instanceOffset(cfg InstanceConfig, width, height int) (int, int) {
+	dx := int(float64(width) * cfg.OffsetX * 0.5)
+	dy := int(float64(height) * cfg.OffsetY * 0.5)
+	return dx, dy
+}
+
+func shiftPoints(points []point2D, dx, dy int) {
+	for i := range points {
+		points[i].x += dx
+		points[i].y += dy
+	}
+}
+
+func updateInstanceRotations(instances []cubeInstanceState) {
+	for i := range instances {
+		speed := instances[i].cfg.RotationSpeed
+		instances[i].angles.x += speed.x
+		instances[i].angles.y += speed.y
+		instances[i].angles.z += speed.z
 	}
 }
 
