@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline`, `ocean` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -88,6 +88,15 @@ go run ./cmd/animterm -mode plasma
 go run ./cmd/animterm -mode skyline
 ```
 
+### Ocean Currents
+
+干渉し合う波と泡が滑らかに流れるアンビエントなオーシャンモード。  
+夜光虫のようなグローと緩やかな波紋で、静かな海面を眺められます。
+
+```bash
+go run ./cmd/animterm -mode ocean
+```
+
 ## ファイル構成
 
 ```
@@ -103,6 +112,7 @@ internal/
   orbit/       # コア＆パーティクル HUD
   plasma/      # プラズマグリッド
   skyline/     # ネオンシティ夜景
+  ocean/       # オーシャンクラフト
 go.mod
 README.md
 ```
