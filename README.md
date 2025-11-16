@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline`, `ocean` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline`, `ocean`, `aurora` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -97,6 +97,15 @@ go run ./cmd/animterm -mode skyline
 go run ./cmd/animterm -mode ocean
 ```
 
+### Aurora Borealis
+
+星空の下で揺らめく多層オーロラカーテンと山影を描く静かなモード。  
+縦に流れる極光とまばらな星、遠景の山稜が、極地の夜を演出します。
+
+```bash
+go run ./cmd/animterm -mode aurora
+```
+
 ## ファイル構成
 
 ```
@@ -113,6 +122,7 @@ internal/
   plasma/      # プラズマグリッド
   skyline/     # ネオンシティ夜景
   ocean/       # オーシャンクラフト
+  aurora/      # オーロラカーテン
 go.mod
 README.md
 ```
