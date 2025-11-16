@@ -16,10 +16,18 @@ var (
 	ansiHome  = "\x1b[H"
 
 	skyPalette = []string{
-		"\x1b[38;5;24m",
-		"\x1b[38;5;25m",
+		"\x1b[38;5;18m",
+		"\x1b[38;5;19m",
+		"\x1b[38;5;20m",
 		"\x1b[38;5;26m",
 		"\x1b[38;5;27m",
+		"\x1b[38;5;33m",
+	}
+	horizonPalette = []string{
+		"\x1b[38;5;54m",
+		"\x1b[38;5;55m",
+		"\x1b[38;5;90m",
+		"\x1b[38;5;129m",
 	}
 	wavePalette = []string{
 		"\x1b[38;5;30m",
@@ -32,6 +40,11 @@ var (
 		"\x1b[38;5;189m",
 		"\x1b[38;5;195m",
 		"\x1b[38;5;231m",
+	}
+	planktonPalette = []string{
+		"\x1b[38;5;45m",
+		"\x1b[38;5;81m",
+		"\x1b[38;5;117m",
 	}
 )
 
@@ -71,6 +84,7 @@ type cell struct {
 
 type bubble struct {
 	x, y  float64
+	vx    float64
 	vy    float64
 	life  int
 	color string
@@ -83,6 +97,7 @@ func Run(cfg Config) {
 
 	grid := newGrid(cfg.Width, cfg.Height)
 	bubbles := make([]bubble, 0, 128)
+	plankton := make([]bubble, 0, 128)
 
 	fmt.Print(ansiHide, ansiClear)
 	defer fmt.Print(ansiShow, ansiReset)
@@ -93,8 +108,11 @@ func Run(cfg Config) {
 	for frame := 0; ; frame++ {
 		clearGrid(grid)
 		drawSky(grid, frame)
-		drawWaves(grid, frame)
+		drawHorizonGlow(grid, frame)
+		drawWaveLayers(grid, frame)
 		drawFoam(grid, frame)
+		updatePlankton(&plankton, cfg.Width, cfg.Height)
+		drawPlankton(grid, plankton)
 		updateBubbles(&bubbles, cfg.Width, cfg.Height)
 		drawBubbles(grid, bubbles)
 		render(grid)
@@ -124,31 +142,74 @@ func drawSky(grid [][]cell, frame int) {
 	width := len(grid[0])
 	limit := height / 3
 	for y := 0; y < limit; y++ {
-		color := skyPalette[(y/2+frame/20)%len(skyPalette)]
+		idx := (y/2 + frame/18) % len(skyPalette)
+		color := skyPalette[idx]
 		for x := 0; x < width; x++ {
 			grid[y][x] = cell{glyph: ' ', color: color}
 		}
 	}
+	drawClouds(grid, frame)
 }
 
-func drawWaves(grid [][]cell, frame int) {
+func drawClouds(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	limit := height / 3
+	for i := 0; i < width/6; i++ {
+		x := (i*9 + frame/2) % width
+		y := limit/2 + int(math.Sin(float64(x)/10+float64(frame)*0.01)*3)
+		if y < 1 || y >= limit {
+			continue
+		}
+		color := skyPalette[(i+frame/12)%len(skyPalette)]
+		setIfEmpty(grid, x, y, '~', color)
+		setIfEmpty(grid, (x+1)%width, y, '~', color)
+	}
+}
+
+func drawHorizonGlow(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	line := height / 3
+	for y := line; y < line+3 && y < height; y++ {
+		color := horizonPalette[(y+frame/10)%len(horizonPalette)]
+		for x := 0; x < width; x++ {
+			setIfEmpty(grid, x, y, ' ', color)
+		}
+	}
+}
+
+func drawWaveLayers(grid [][]cell, frame int) {
 	height := len(grid)
 	width := len(grid[0])
 	base := height / 3
+	layerConfigs := []struct {
+		scale float64
+		speed float64
+		amp   float64
+	}{
+		{scale: 1.0, speed: 1.0, amp: 1},
+		{scale: 1.5, speed: 0.7, amp: 0.8},
+		{scale: 2.3, speed: 0.4, amp: 0.6},
+	}
 	for y := base; y < height; y++ {
 		py := float64(y-base) / float64(height-base)
 		color := wavePalette[(int(py*float64(len(wavePalette)))+frame/15)%len(wavePalette)]
 		for x := 0; x < width; x++ {
 			fx := float64(x) / float64(width)
-			value := waveValue(fx, py, frame)
+			value := 0.0
+			for _, cfg := range layerConfigs {
+				value += cfg.amp * waveValue(fx*cfg.scale, py*cfg.scale, frame, cfg.speed)
+			}
+			value = value / float64(len(layerConfigs))
 			glyph := waveGlyph(value)
 			grid[y][x] = cell{glyph: glyph, color: color}
 		}
 	}
 }
 
-func waveValue(fx, fy float64, frame int) float64 {
-	t := float64(frame) * 0.035
+func waveValue(fx, fy float64, frame int, speed float64) float64 {
+	t := float64(frame) * 0.035 * speed
 	value := math.Sin((fx*8+fy*6)*math.Pi+t) +
 		0.7*math.Sin((fx*3-fy*5)*math.Pi+t*0.7) +
 		0.5*math.Sin((fx+fy)*12*math.Pi+t*1.4)
@@ -200,6 +261,7 @@ func updateBubbles(bubbles *[]bubble, width, height int) {
 		*bubbles = append(*bubbles, bubble{
 			x:     rand.Float64() * float64(width),
 			y:     float64(height - 1),
+			vx:    rand.Float64()*0.2 - 0.1,
 			vy:    -0.3 - rand.Float64()*0.4,
 			life:  40 + rand.Intn(40),
 			color: foamPalette[rand.Intn(len(foamPalette))],
@@ -208,6 +270,7 @@ func updateBubbles(bubbles *[]bubble, width, height int) {
 	items := *bubbles
 	dst := items[:0]
 	for i := range items {
+		items[i].x += items[i].vx
 		items[i].y += items[i].vy
 		items[i].life--
 		if items[i].y < float64(height/3) || items[i].life <= 0 {
@@ -216,6 +279,42 @@ func updateBubbles(bubbles *[]bubble, width, height int) {
 		dst = append(dst, items[i])
 	}
 	*bubbles = dst
+}
+
+func drawPlankton(grid [][]cell, plankton []bubble) {
+	for _, p := range plankton {
+		x := int(math.Round(p.x))
+		y := int(math.Round(p.y))
+		if y < 0 || y >= len(grid) || x < 0 || x >= len(grid[0]) {
+			continue
+		}
+		setCell(grid, x, y, '.', p.color)
+	}
+}
+
+func updatePlankton(plankton *[]bubble, width, height int) {
+	if rand.Intn(4) == 0 {
+		*plankton = append(*plankton, bubble{
+			x:     rand.Float64() * float64(width),
+			y:     float64(height/2 + rand.Intn(height/2)),
+			vx:    rand.Float64()*0.3 - 0.15,
+			vy:    -rand.Float64() * 0.1,
+			life:  80 + rand.Intn(80),
+			color: planktonPalette[rand.Intn(len(planktonPalette))],
+		})
+	}
+	items := *plankton
+	dst := items[:0]
+	for i := range items {
+		items[i].x += items[i].vx
+		items[i].y += items[i].vy
+		items[i].life--
+		if items[i].y < float64(height/3) || items[i].life <= 0 {
+			continue
+		}
+		dst = append(dst, items[i])
+	}
+	*plankton = dst
 }
 
 func setCell(grid [][]cell, x, y int, glyph byte, color string) {
