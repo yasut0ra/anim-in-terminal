@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"animinterminal/internal/aurora"
 	"animinterminal/internal/cloud"
 	"animinterminal/internal/cybercube"
 	"animinterminal/internal/ocean"
@@ -18,7 +19,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean")
+	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | aurora")
 	width := flag.Int("width", 0, "override character width")
 	height := flag.Int("height", 0, "override character height")
 	delay := flag.Duration("delay", 0, "override frame delay (e.g. 50ms)")
@@ -65,8 +66,12 @@ func main() {
 		cfg := ocean.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		ocean.Run(cfg)
+	case "aurora", "borealis", "polar":
+		cfg := aurora.DefaultConfig()
+		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
+		aurora.Run(cfg)
 	default:
-		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean)\n", *mode)
+		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | aurora)\n", *mode)
 	}
 }
 
