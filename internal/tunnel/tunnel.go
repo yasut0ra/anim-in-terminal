@@ -130,36 +130,8 @@ func drawTunnel(grid [][]cell, frame int) {
 		}
 	}
 
-	drawRails(grid, frame)
+	drawPulseRings(grid, frame)
 	drawCenterGlow(grid, frame)
-	drawScanline(grid, frame)
-}
-
-func drawRails(grid [][]cell, frame int) {
-	height := len(grid)
-	if height == 0 {
-		return
-	}
-	width := len(grid[0])
-	cx := width / 2
-	spread := width / 3
-	phase := math.Sin(float64(frame)*0.07) * 2
-
-	for y := 0; y < height; y++ {
-		depth := float64(y) / float64(height)
-		inward := int(depth * float64(spread))
-		wobble := int(math.Sin(float64(y)*0.12+float64(frame)*0.18) * 2)
-
-		left := cx - spread + inward + wobble + int(phase)
-		right := cx + spread - inward - wobble - int(phase)
-
-		if left >= 0 && left < width {
-			grid[y][left] = cell{glyph: '/', color: "\x1b[38;5;81m"}
-		}
-		if right >= 0 && right < width {
-			grid[y][right] = cell{glyph: '\\', color: "\x1b[38;5;123m"}
-		}
-	}
 }
 
 func drawCenterGlow(grid [][]cell, frame int) {
@@ -188,17 +160,47 @@ func drawCenterGlow(grid [][]cell, frame int) {
 	}
 }
 
-func drawScanline(grid [][]cell, frame int) {
+func drawPulseRings(grid [][]cell, frame int) {
 	height := len(grid)
 	if height == 0 {
 		return
 	}
-	row := (frame / 3) % height
-	for x := range grid[row] {
-		if grid[row][x].glyph == ' ' {
-			grid[row][x].glyph = '-'
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+	maxR := float64(width)/2 - 1
+	if maxR < 2 {
+		return
+	}
+
+	aspect := float64(width) / float64(height) // stretch vertical distance to keep rings circular
+	speed := 1.0
+	thickness := 1.6
+	gap := 10.0
+	cycle := maxR + thickness*2 + gap
+	phase := math.Mod(float64(frame)*speed, cycle)
+	if phase > maxR+thickness {
+		return
+	}
+	radius := math.Min(maxR, math.Max(1, phase))
+	color := colorPalette[(frame/9)%len(colorPalette)]
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			dx := float64(x - cx)
+			dy := float64(y-cy) * aspect
+			dist := math.Hypot(dx, dy)
+			band := math.Abs(dist - radius)
+			if band > thickness {
+				continue
+			}
+			intensity := clamp(1-(band/thickness), 0, 1)
+			glyph := '.'
+			if intensity > 0.55 {
+				glyph = '*'
+			}
+			grid[y][x] = cell{glyph: byte(glyph), color: color}
 		}
-		grid[row][x].color = "\x1b[38;5;250m"
 	}
 }
 
