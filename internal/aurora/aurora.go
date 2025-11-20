@@ -6,15 +6,11 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	skyPalette = []string{
 		"\x1b[38;5;17m",
 		"\x1b[38;5;18m",
@@ -83,8 +79,8 @@ func Run(cfg Config) {
 
 	grid := newGrid(cfg.Width, cfg.Height)
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
@@ -223,7 +219,7 @@ func render(grid [][]cell) {
 	height := len(grid)
 	width := len(grid[0])
 	sb.Grow((width+8)*height + 16)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 	for _, row := range grid {
 		for _, c := range row {
 			if c.color != "" {
@@ -231,7 +227,7 @@ func render(grid [][]cell) {
 			}
 			sb.WriteByte(c.glyph)
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 	fmt.Print(sb.String())
