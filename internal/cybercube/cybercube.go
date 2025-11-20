@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 const (
@@ -17,12 +19,6 @@ const (
 var baseRotationSpeed = vec3{0.022, 0.017, 0.013}
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	edgePalette = []string{
 		"\x1b[38;5;45m",
 		"\x1b[38;5;81m",
@@ -224,7 +220,7 @@ func (g *gridBuffer) SetIfEmpty(x, y int, glyph byte, color string) {
 func (g *gridBuffer) Render() {
 	var sb strings.Builder
 	sb.Grow((g.width+10)*g.height + 8)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 
 	for _, row := range g.cells {
 		for _, c := range row {
@@ -233,7 +229,7 @@ func (g *gridBuffer) Render() {
 			}
 			sb.WriteByte(c.glyph)
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 
@@ -298,8 +294,8 @@ func Run(cfg Config) {
 		}
 	}
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
