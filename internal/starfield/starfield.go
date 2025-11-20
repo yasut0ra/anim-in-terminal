@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 const (
@@ -18,12 +20,6 @@ const (
 )
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	starPalette = []string{
 		"\x1b[38;5;250m",
 		"\x1b[38;5;252m",
@@ -113,15 +109,16 @@ func Run(cfg Config) {
 	cfg = cfg.normalize()
 	rand.Seed(time.Now().UnixNano())
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	stars := makeStars(cfg)
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
+	grid := newGrid(cfg.Width, cfg.Height)
 
 	for frame := 0; ; frame++ {
-		grid := newGrid(cfg.Width, cfg.Height)
+		clearGrid(grid)
 		drawBackdrop(grid, frame)
 		drawWarpTunnel(grid, frame)
 		drawStars(grid, stars, cfg, frame)
@@ -159,11 +156,17 @@ func newGrid(width, height int) [][]cell {
 	grid := make([][]cell, height)
 	for y := range grid {
 		grid[y] = make([]cell, width)
-		for x := range grid[y] {
-			grid[y][x] = cell{glyph: ' ', color: ""}
-		}
 	}
 	return grid
+}
+
+func clearGrid(grid [][]cell) {
+	for y := range grid {
+		row := grid[y]
+		for x := range row {
+			row[x] = cell{glyph: ' ', color: ""}
+		}
+	}
 }
 
 func drawBackdrop(grid [][]cell, frame int) {
@@ -384,7 +387,7 @@ func render(grid [][]cell) {
 	height := len(grid)
 	width := len(grid[0])
 	sb.Grow((width+8)*height + 16)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 
 	for _, row := range grid {
 		for _, c := range row {
@@ -393,7 +396,7 @@ func render(grid [][]cell) {
 			}
 			sb.WriteByte(c.glyph)
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 

@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 const (
@@ -16,12 +18,6 @@ const (
 )
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	backgroundPalette = []string{
 		"\x1b[38;5;236m",
 		"\x1b[38;5;237m",
@@ -128,8 +124,8 @@ func Run(cfg Config) {
 	particles := makeParticles(cfg)
 	rings := makeRings(cfg)
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
@@ -436,7 +432,7 @@ func render(grid [][]cell) {
 	}
 	width := len(grid[0])
 	sb.Grow((width+8)*height + 16)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 
 	for _, row := range grid {
 		for _, c := range row {
@@ -449,7 +445,7 @@ func render(grid [][]cell) {
 				sb.WriteByte(c.glyph)
 			}
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 

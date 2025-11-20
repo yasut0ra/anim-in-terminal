@@ -5,6 +5,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 const (
@@ -13,12 +15,6 @@ const (
 )
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	colorPalette = []string{
 		"\x1b[38;5;17m",
 		"\x1b[38;5;18m",
@@ -35,6 +31,20 @@ var (
 		"\x1b[38;5;195m",
 	}
 	glyphPalette = []byte{' ', '.', '.', ':', '-', '+', '*', 'x', 'X', '#', '@'}
+	starPalette  = []string{
+		"\x1b[38;5;25m",
+		"\x1b[38;5;31m",
+		"\x1b[38;5;33m",
+		"\x1b[38;5;39m",
+		"\x1b[38;5;45m",
+		"\x1b[38;5;51m",
+	}
+	accentPalette = []string{
+		"\x1b[38;5;51m",
+		"\x1b[38;5;87m",
+		"\x1b[38;5;123m",
+		"\x1b[38;5;159m",
+	}
 )
 
 // Config controls the tunnel animation behaviour.
@@ -76,8 +86,8 @@ func Run(cfg Config) {
 	cfg = cfg.normalize()
 	grid := newGrid(cfg.Width, cfg.Height)
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
@@ -134,36 +144,11 @@ func drawTunnel(grid [][]cell, frame int) {
 		}
 	}
 
-	drawRails(grid, frame)
+	drawBackgroundStars(grid, frame)
+	drawRays(grid, frame)
+	drawDebris(grid, frame)
+	drawPulseRings(grid, frame)
 	drawCenterGlow(grid, frame)
-	drawScanline(grid, frame)
-}
-
-func drawRails(grid [][]cell, frame int) {
-	height := len(grid)
-	if height == 0 {
-		return
-	}
-	width := len(grid[0])
-	cx := width / 2
-	spread := width / 3
-	phase := math.Sin(float64(frame)*0.07) * 2
-
-	for y := 0; y < height; y++ {
-		depth := float64(y) / float64(height)
-		inward := int(depth * float64(spread))
-		wobble := int(math.Sin(float64(y)*0.12+float64(frame)*0.18) * 2)
-
-		left := cx - spread + inward + wobble + int(phase)
-		right := cx + spread - inward - wobble - int(phase)
-
-		if left >= 0 && left < width {
-			grid[y][left] = cell{glyph: '/', color: "\x1b[38;5;81m"}
-		}
-		if right >= 0 && right < width {
-			grid[y][right] = cell{glyph: '\\', color: "\x1b[38;5;123m"}
-		}
-	}
 }
 
 func drawCenterGlow(grid [][]cell, frame int) {
@@ -192,17 +177,110 @@ func drawCenterGlow(grid [][]cell, frame int) {
 	}
 }
 
-func drawScanline(grid [][]cell, frame int) {
+func drawPulseRings(grid [][]cell, frame int) {
 	height := len(grid)
 	if height == 0 {
 		return
 	}
-	row := (frame / 3) % height
-	for x := range grid[row] {
-		if grid[row][x].glyph == ' ' {
-			grid[row][x].glyph = '-'
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+	maxR := float64(width)/2 - 1
+	if maxR < 2 {
+		return
+	}
+
+	aspect := 1.0
+	speed := 1.15
+	thickness := 1.8
+	gap := 10.0
+	cycle := maxR + thickness*2 + gap
+	phase := math.Mod(float64(frame)*speed, cycle)
+	if phase > maxR+thickness {
+		return
+	}
+	radius := math.Min(maxR, math.Max(1, phase))
+	color := accentPalette[(frame/7)%len(accentPalette)]
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			dx := float64(x - cx)
+			dy := float64(y-cy) * aspect
+			dist := math.Hypot(dx, dy)
+			band := math.Abs(dist - radius)
+			if band > thickness {
+				continue
+			}
+			intensity := clamp(1-(band/thickness), 0, 1)
+			glyph := '.'
+			if intensity > 0.65 {
+				glyph = '*'
+			}
+			grid[y][x] = cell{glyph: byte(glyph), color: color}
 		}
-		grid[row][x].color = "\x1b[38;5;250m"
+	}
+}
+
+func drawBackgroundStars(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for y := 0; y < height; y += 2 {
+		for x := (y + frame/3) % 6; x < width; x += 6 {
+			color := starPalette[(x/3+y+frame/11)%len(starPalette)]
+			if ((x*37 + y*13 + frame) % 57) < 3 {
+				setCell(grid, x, y, '.', color)
+			} else if ((x*19 + y*7 + frame*2) % 71) == 0 {
+				setCell(grid, x, y, '+', color)
+			}
+		}
+	}
+}
+
+func drawRays(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+	count := 14
+	maxR := float64(width) / 2
+	for i := 0; i < count; i++ {
+		angle := float64(i)/float64(count)*math.Pi*2 + math.Sin(float64(frame)*0.012)*0.6
+		phase := math.Sin(float64(frame)*0.06+float64(i)) * 0.5
+		length := maxR * (0.6 + 0.35*phase)
+		color := accentPalette[(i+frame/6)%len(accentPalette)]
+		for r := 1.0; r < length; r += 0.8 {
+			x := cx + int(math.Cos(angle)*r)
+			y := cy + int(math.Sin(angle)*r*0.6)
+			if x < 0 || x >= width || y < 0 || y >= height {
+				continue
+			}
+			glyph := '|'
+			if i%2 == 0 {
+				glyph = '/'
+			}
+			setCell(grid, x, y, byte(glyph), color)
+		}
+	}
+}
+
+func drawDebris(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+	count := width / 2
+	for i := 0; i < count; i++ {
+		f := float64(i) + float64(frame)*0.9
+		theta := math.Sin(f*0.03+float64(frame)*0.001)*math.Pi + float64(i%7)*0.4
+		r := math.Mod(f*0.18, float64(width)/2) * (0.7 + 0.3*math.Sin(float64(frame)*0.02))
+		x := cx + int(math.Cos(theta)*r)
+		y := cy + int(math.Sin(theta)*r*0.65)
+		if x < 0 || x >= width || y < 0 || y >= height {
+			continue
+		}
+		color := colorPalette[(i+frame/5)%len(colorPalette)]
+		glyph := glyphPalette[(i+frame)%len(glyphPalette)]
+		setCell(grid, x, y, glyph, color)
 	}
 }
 
@@ -230,6 +308,16 @@ func glyphForValue(v float64) byte {
 	return glyphPalette[idx]
 }
 
+func setCell(grid [][]cell, x, y int, glyph byte, color string) {
+	if y < 0 || y >= len(grid) {
+		return
+	}
+	if x < 0 || x >= len(grid[y]) {
+		return
+	}
+	grid[y][x] = cell{glyph: glyph, color: color}
+}
+
 func clamp(v, minV, maxV float64) float64 {
 	if v < minV {
 		return minV
@@ -248,7 +336,7 @@ func render(grid [][]cell) {
 	}
 	width := len(grid[0])
 	sb.Grow((width+8)*height + 16)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 
 	for _, row := range grid {
 		for _, c := range row {
@@ -261,7 +349,7 @@ func render(grid [][]cell) {
 			}
 			sb.WriteByte(g)
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 
