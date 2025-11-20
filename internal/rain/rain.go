@@ -6,20 +6,17 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"animinterminal/internal/term"
 )
 
 const (
-	minWidth  = 48
-	minHeight = 24
+	minWidth    = 48
+	minHeight   = 24
+	maxSplashes = 256
 )
 
 var (
-	ansiReset = "\x1b[0m"
-	ansiHide  = "\x1b[?25l"
-	ansiShow  = "\x1b[?25h"
-	ansiClear = "\x1b[2J"
-	ansiHome  = "\x1b[H"
-
 	streamPalettes = [][]string{
 		{"\x1b[38;5;159m", "\x1b[38;5;81m", "\x1b[38;5;42m", "\x1b[38;5;35m"},
 		{"\x1b[38;5;120m", "\x1b[38;5;47m", "\x1b[38;5;40m", "\x1b[38;5;34m"},
@@ -114,17 +111,18 @@ func Run(cfg Config) {
 	cfg = cfg.normalize()
 	rand.Seed(time.Now().UnixNano())
 
-	fmt.Print(ansiHide, ansiClear)
-	defer fmt.Print(ansiShow, ansiReset)
+	cleanup := term.Start(true)
+	defer cleanup()
 
 	streams := makeStreams(cfg)
 	splashes := make([]splash, 0, 128)
 	var bolt lightning
 	ticker := time.NewTicker(cfg.FrameDelay)
 	defer ticker.Stop()
+	grid := newGrid(cfg.Width, cfg.Height)
 
 	for frame := 0; ; frame++ {
-		grid := newGrid(cfg.Width, cfg.Height)
+		clearGrid(grid)
 		drawBackground(grid, frame)
 		drawMist(grid, frame)
 		drawDrizzle(grid, frame)
@@ -149,11 +147,17 @@ func newGrid(width, height int) [][]cell {
 	grid := make([][]cell, height)
 	for y := range grid {
 		grid[y] = make([]cell, width)
-		for x := range grid[y] {
-			grid[y][x] = cell{glyph: ' ', color: ""}
-		}
 	}
 	return grid
+}
+
+func clearGrid(grid [][]cell) {
+	for y := range grid {
+		row := grid[y]
+		for x := range row {
+			row[x] = cell{glyph: ' ', color: ""}
+		}
+	}
 }
 
 func drawMist(grid [][]cell, frame int) {
@@ -246,6 +250,13 @@ func streamColumn(s stream, frame int, width int) int {
 
 func emitSplash(splashes *[]splash, x int, height int) {
 	count := 2 + rand.Intn(3)
+	remaining := maxSplashes - len(*splashes)
+	if remaining <= 0 {
+		return
+	}
+	if count > remaining {
+		count = remaining
+	}
 	baseY := float64(height - 2)
 	for i := 0; i < count; i++ {
 		*splashes = append(*splashes, splash{
@@ -385,7 +396,7 @@ func render(grid [][]cell) {
 	height := len(grid)
 	width := len(grid[0])
 	sb.Grow((width+8)*height + 16)
-	sb.WriteString(ansiHome)
+	sb.WriteString(term.Home)
 
 	for _, row := range grid {
 		for _, c := range row {
@@ -394,7 +405,7 @@ func render(grid [][]cell) {
 			}
 			sb.WriteByte(c.glyph)
 		}
-		sb.WriteString(ansiReset)
+		sb.WriteString(term.Reset)
 		sb.WriteByte('\n')
 	}
 
