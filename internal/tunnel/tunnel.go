@@ -1,0 +1,269 @@
+package tunnel
+
+import (
+	"fmt"
+	"math"
+	"strings"
+	"time"
+)
+
+const (
+	minWidth  = 60
+	minHeight = 24
+)
+
+var (
+	ansiReset = "\x1b[0m"
+	ansiHide  = "\x1b[?25l"
+	ansiShow  = "\x1b[?25h"
+	ansiClear = "\x1b[2J"
+	ansiHome  = "\x1b[H"
+
+	colorPalette = []string{
+		"\x1b[38;5;17m",
+		"\x1b[38;5;18m",
+		"\x1b[38;5;19m",
+		"\x1b[38;5;20m",
+		"\x1b[38;5;27m",
+		"\x1b[38;5;33m",
+		"\x1b[38;5;39m",
+		"\x1b[38;5;45m",
+		"\x1b[38;5;51m",
+		"\x1b[38;5;87m",
+		"\x1b[38;5;123m",
+		"\x1b[38;5;159m",
+		"\x1b[38;5;195m",
+	}
+	glyphPalette = []byte{' ', '.', '.', ':', '-', '+', '*', 'x', 'X', '#', '@'}
+)
+
+// Config controls the tunnel animation behaviour.
+type Config struct {
+	Width      int
+	Height     int
+	FrameDelay time.Duration
+}
+
+// DefaultConfig returns sane defaults for typical terminals.
+func DefaultConfig() Config {
+	return Config{
+		Width:      100,
+		Height:     34,
+		FrameDelay: 35 * time.Millisecond,
+	}
+}
+
+func (c Config) normalize() Config {
+	if c.Width < minWidth {
+		c.Width = minWidth
+	}
+	if c.Height < minHeight {
+		c.Height = minHeight
+	}
+	if c.FrameDelay <= 0 {
+		c.FrameDelay = 40 * time.Millisecond
+	}
+	return c
+}
+
+type cell struct {
+	glyph byte
+	color string
+}
+
+// Run launches the neon tunnel animation.
+func Run(cfg Config) {
+	cfg = cfg.normalize()
+	grid := newGrid(cfg.Width, cfg.Height)
+
+	fmt.Print(ansiHide, ansiClear)
+	defer fmt.Print(ansiShow, ansiReset)
+
+	ticker := time.NewTicker(cfg.FrameDelay)
+	defer ticker.Stop()
+
+	for frame := 0; ; frame++ {
+		drawTunnel(grid, frame)
+		render(grid)
+		<-ticker.C
+	}
+}
+
+func newGrid(width, height int) [][]cell {
+	grid := make([][]cell, height)
+	for y := range grid {
+		grid[y] = make([]cell, width)
+	}
+	return grid
+}
+
+func drawTunnel(grid [][]cell, frame int) {
+	height := len(grid)
+	if height == 0 {
+		return
+	}
+	width := len(grid[0])
+
+	t := float64(frame) * 0.045
+	swirl := float64(frame) * 0.02
+	depthPulse := 0.55 + 0.4*math.Sin(float64(frame)*0.05)
+
+	for y := 0; y < height; y++ {
+		ny := (float64(y)/float64(height) - 0.5) * 2
+		ny *= 0.72
+		for x := 0; x < width; x++ {
+			nx := (float64(x)/float64(width) - 0.5) * 2
+			nx *= 1.1
+
+			r := math.Hypot(nx, ny) + 0.0001
+			angle := math.Atan2(ny, nx)
+
+			depth := 1.0 / (r*2.2 + 0.5)
+			wave := math.Sin(1.5/r - t*1.7 + math.Cos(angle*3+swirl)*0.55)
+			spiral := math.Sin(angle*6 + t*2.1)
+			flow := math.Cos(r*14 - t*3.4 + angle*1.3)
+			band := math.Cos((r-depthPulse)*9 - t*1.2)
+
+			value := wave*0.62 + spiral*0.24 + flow*0.28 + band*0.18 - r*0.95
+			intensity := value + depth*0.9
+
+			grid[y][x] = cell{
+				glyph: glyphForValue(intensity),
+				color: paletteForValue(intensity),
+			}
+		}
+	}
+
+	drawRails(grid, frame)
+	drawCenterGlow(grid, frame)
+	drawScanline(grid, frame)
+}
+
+func drawRails(grid [][]cell, frame int) {
+	height := len(grid)
+	if height == 0 {
+		return
+	}
+	width := len(grid[0])
+	cx := width / 2
+	spread := width / 3
+	phase := math.Sin(float64(frame)*0.07) * 2
+
+	for y := 0; y < height; y++ {
+		depth := float64(y) / float64(height)
+		inward := int(depth * float64(spread))
+		wobble := int(math.Sin(float64(y)*0.12+float64(frame)*0.18) * 2)
+
+		left := cx - spread + inward + wobble + int(phase)
+		right := cx + spread - inward - wobble - int(phase)
+
+		if left >= 0 && left < width {
+			grid[y][left] = cell{glyph: '/', color: "\x1b[38;5;81m"}
+		}
+		if right >= 0 && right < width {
+			grid[y][right] = cell{glyph: '\\', color: "\x1b[38;5;123m"}
+		}
+	}
+}
+
+func drawCenterGlow(grid [][]cell, frame int) {
+	height := len(grid)
+	if height == 0 {
+		return
+	}
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+
+	radius := 1 + int(2*(0.5+0.5*math.Sin(float64(frame)*0.1+1.4)))
+	for y := cy - radius; y <= cy+radius; y++ {
+		if y < 0 || y >= height {
+			continue
+		}
+		for x := cx - radius; x <= cx+radius; x++ {
+			if x < 0 || x >= width {
+				continue
+			}
+			dist := math.Hypot(float64(x-cx), float64(y-cy))
+			if dist <= float64(radius) {
+				grid[y][x] = cell{glyph: '*', color: "\x1b[38;5;195m"}
+			}
+		}
+	}
+}
+
+func drawScanline(grid [][]cell, frame int) {
+	height := len(grid)
+	if height == 0 {
+		return
+	}
+	row := (frame / 3) % height
+	for x := range grid[row] {
+		if grid[row][x].glyph == ' ' {
+			grid[row][x].glyph = '-'
+		}
+		grid[row][x].color = "\x1b[38;5;250m"
+	}
+}
+
+func paletteForValue(v float64) string {
+	if len(colorPalette) == 0 {
+		return ""
+	}
+	norm := clamp((v+1.3)/2.6, 0, 0.9999)
+	idx := int(norm * float64(len(colorPalette)))
+	return colorPalette[idx]
+}
+
+func glyphForValue(v float64) byte {
+	if len(glyphPalette) == 0 {
+		return '#'
+	}
+	norm := clamp((v+1.0)/2.0, 0, 0.9999)
+	idx := int(norm * float64(len(glyphPalette)))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(glyphPalette) {
+		idx = len(glyphPalette) - 1
+	}
+	return glyphPalette[idx]
+}
+
+func clamp(v, minV, maxV float64) float64 {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
+}
+
+func render(grid [][]cell) {
+	var sb strings.Builder
+	height := len(grid)
+	if height == 0 {
+		return
+	}
+	width := len(grid[0])
+	sb.Grow((width+8)*height + 16)
+	sb.WriteString(ansiHome)
+
+	for _, row := range grid {
+		for _, c := range row {
+			if c.color != "" {
+				sb.WriteString(c.color)
+			}
+			g := c.glyph
+			if g == 0 {
+				g = ' '
+			}
+			sb.WriteByte(g)
+		}
+		sb.WriteString(ansiReset)
+		sb.WriteByte('\n')
+	}
+
+	fmt.Print(sb.String())
+}

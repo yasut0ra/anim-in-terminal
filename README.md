@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `orbit`, `plasma`, `skyline`, `ocean`, `aurora` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `tunnel`, `orbit`, `plasma`, `skyline`, `ocean`, `aurora` を指定できます。  
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -59,6 +59,15 @@ go run ./cmd/animterm -mode cloud
 
 ```bash
 go run ./cmd/animterm -mode starfield
+```
+
+### Vortex Tunnel
+
+ワープ前進しているようなネオンの螺旋トンネル。  
+放射状にうねるノイズグラデーションと左右のレール、走査線グローで高速航行 HUD っぽい雰囲気になります。
+
+```bash
+go run ./cmd/animterm -mode tunnel
 ```
 
 ### Particle Orbit HUD
@@ -123,6 +132,7 @@ internal/
   skyline/     # ネオンシティ夜景
   ocean/       # オーシャンクラフト
   aurora/      # オーロラカーテン
+  tunnel/      # 螺旋ワープトンネル
 go.mod
 README.md
 ```
