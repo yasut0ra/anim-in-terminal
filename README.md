@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `tunnel`, `orbit`, `plasma`, `skyline`, `ocean`, `aurora` を指定できます。  
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `tunnel`, `orbit`, `plasma`, `skyline`, `ocean`, `jellyfish`, `aurora` を指定できます。\
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -106,6 +106,15 @@ go run ./cmd/animterm -mode skyline
 go run ./cmd/animterm -mode ocean
 ```
 
+### Drifting Jellyfish
+
+半透明の傘を収縮させながら、長い触手を水流になびかせて泳ぐクラゲのアスキーアニメーション。\
+奥行きの異なる複数のクラゲと、ゆっくり浮上する泡や水中の微光を重ねています。
+
+```bash
+go run ./cmd/animterm -mode jellyfish
+```
+
 ### Aurora Borealis
 
 星空の下で揺らめく多層オーロラカーテンと山影を描く静かなモード。  
@@ -131,6 +140,7 @@ internal/
   plasma/      # プラズマグリッド
   skyline/     # ネオンシティ夜景
   ocean/       # オーシャンクラフト
+  jellyfish/   # 漂うクラゲと触手
   aurora/      # オーロラカーテン
   tunnel/      # 螺旋ワープトンネル
 go.mod

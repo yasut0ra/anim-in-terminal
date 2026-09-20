@@ -9,6 +9,7 @@ import (
 	"animinterminal/internal/aurora"
 	"animinterminal/internal/cloud"
 	"animinterminal/internal/cybercube"
+	"animinterminal/internal/jellyfish"
 	"animinterminal/internal/ocean"
 	"animinterminal/internal/orbit"
 	"animinterminal/internal/plasma"
@@ -20,7 +21,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | aurora | tunnel")
+	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | aurora | tunnel")
 	width := flag.Int("width", 0, "override character width")
 	height := flag.Int("height", 0, "override character height")
 	delay := flag.Duration("delay", 0, "override frame delay (e.g. 50ms)")
@@ -67,6 +68,10 @@ func main() {
 		cfg := ocean.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		ocean.Run(cfg)
+	case "jellyfish", "jelly", "medusa":
+		cfg := jellyfish.DefaultConfig()
+		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
+		jellyfish.Run(cfg)
 	case "aurora", "borealis", "polar":
 		cfg := aurora.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
@@ -76,7 +81,7 @@ func main() {
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		tunnel.Run(cfg)
 	default:
-		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | aurora | tunnel)\n", *mode)
+		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | aurora | tunnel)\n", *mode)
 	}
 }
 
