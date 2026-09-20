@@ -29,6 +29,11 @@ var (
 		"\x1b[38;5;39m",
 		"\x1b[38;5;45m",
 	}
+	arcPalette = []string{
+		"\x1b[38;5;45m",
+		"\x1b[38;5;51m",
+		"\x1b[38;5;87m",
+	}
 	particlePalette = []string{
 		"\x1b[38;5;195m",
 		"\x1b[38;5;159m",
@@ -105,6 +110,7 @@ type particle struct {
 	angle      float64
 	angularVel float64
 	layer      int
+	tilt       float64
 	trail      [][2]int
 }
 
@@ -113,6 +119,8 @@ type ring struct {
 	speed  float64
 	phase  float64
 	width  float64
+	wobble float64
+	pulse  float64
 }
 
 // Run starts the particle orbit HUD animation loop.
@@ -133,10 +141,13 @@ func Run(cfg Config) {
 	for frame := 0; ; frame++ {
 		clearGrid(grid)
 		drawBackground(grid, frame)
+		drawBackgroundStars(grid, frame)
 		drawRings(grid, rings, frame)
 		drawCore(grid, frame)
+		drawEnergyBeams(grid, frame)
 		drawSensors(grid, frame)
 		drawParticles(grid, particles, frame)
+		drawDebris(grid, frame)
 		drawHUD(grid, particles, frame)
 		render(grid)
 
@@ -173,6 +184,7 @@ func makeParticles(cfg Config) []particle {
 			angle:      rand.Float64() * math.Pi * 2,
 			angularVel: 0.006 + rand.Float64()*0.018 + float64(layer)*0.004,
 			layer:      layer,
+			tilt:       0.55 + rand.Float64()*0.25,
 			trail:      make([][2]int, 0, 6),
 		}
 		if rand.Intn(2) == 0 {
@@ -184,9 +196,9 @@ func makeParticles(cfg Config) []particle {
 
 func makeRings(cfg Config) []ring {
 	return []ring{
-		{radius: 0.3, speed: 0.004, width: 0.018},
-		{radius: 0.55, speed: -0.006, width: 0.022},
-		{radius: 0.75, speed: 0.003, width: 0.026},
+		{radius: 0.32, speed: 0.004, width: 0.02, wobble: 0.05, pulse: 0.25},
+		{radius: 0.55, speed: -0.0065, width: 0.024, wobble: 0.08, pulse: 0.35},
+		{radius: 0.78, speed: 0.0035, width: 0.028, wobble: 0.06, pulse: 0.2},
 	}
 }
 
@@ -201,6 +213,20 @@ func drawBackground(grid [][]cell, frame int) {
 	}
 }
 
+func drawBackgroundStars(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	for y := 0; y < height; y += 2 {
+		for x := (y + frame/2) % 8; x < width; x += 8 {
+			if ((x*31 + y*17 + frame) % 73) > 2 {
+				continue
+			}
+			color := backgroundPalette[(x/3+y+frame/21)%len(backgroundPalette)]
+			setIfEmpty(grid, x, y, '.', color)
+		}
+	}
+}
+
 func drawRings(grid [][]cell, rings []ring, frame int) {
 	width := len(grid[0])
 	height := len(grid)
@@ -209,8 +235,11 @@ func drawRings(grid [][]cell, rings []ring, frame int) {
 	scale := float64(min(width, height)) * 0.9
 
 	for idx, r := range rings {
-		color := ringPalette[(idx+frame/12)%len(ringPalette)]
-		drawRing(grid, centerX, centerY, r.radius*scale, r.width*scale, r.phase, color)
+		radius := r.radius * scale * (1 + r.wobble*math.Sin(float64(frame)*0.04+r.phase*2))
+		thickness := r.width * scale * (1 + r.pulse*math.Sin(float64(frame)*0.05+r.phase))
+		color := ringPalette[(idx+frame/10)%len(ringPalette)]
+		drawRing(grid, centerX, centerY, radius, thickness, r.phase, color)
+		drawRingArcs(grid, centerX, centerY, radius, thickness, frame, idx)
 	}
 }
 
@@ -285,7 +314,7 @@ func drawParticles(grid [][]cell, particles []particle, frame int) {
 	for i := range particles {
 		p := &particles[i]
 		x := centerX + int(math.Cos(p.angle)*p.radius*scale)
-		y := centerY + int(math.Sin(p.angle)*p.radius*scale*0.6)
+		y := centerY + int(math.Sin(p.angle)*p.radius*scale*p.tilt)
 
 		addTrailPoint(p, x, y)
 		drawParticleTrail(grid, p)
@@ -310,6 +339,30 @@ func drawSensors(grid [][]cell, frame int) {
 	}
 }
 
+func drawEnergyBeams(grid [][]cell, frame int) {
+	width := len(grid[0])
+	height := len(grid)
+	cx := width / 2
+	cy := height / 2
+	count := 8
+	length := float64(min(width, height)) * 0.58
+
+	for i := 0; i < count; i++ {
+		base := float64(i)/float64(count)*math.Pi*2 + float64(frame)*0.006
+		osc := math.Sin(float64(frame)*0.04+float64(i)) * 0.18
+		angle := base + osc
+		color := arcPalette[(i+frame/5)%len(arcPalette)]
+		for r := length * 0.25; r < length; r += 1.2 {
+			x := cx + int(math.Cos(angle)*r)
+			y := cy + int(math.Sin(angle)*r*0.62)
+			setIfEmpty(grid, x, y, '|', color)
+			if r == length*0.25 {
+				setIfEmpty(grid, x, y, '+', color)
+			}
+		}
+	}
+}
+
 func drawSensorSweep(grid [][]cell, cx, cy int, angle float64, radius float64, color string) {
 	for r := radius * 0.6; r < radius; r += 3 {
 		x := cx + int(math.Cos(angle)*r)
@@ -327,8 +380,8 @@ func drawSensorSweep(grid [][]cell, cx, cy int, angle float64, radius float64, c
 
 func addTrailPoint(p *particle, x, y int) {
 	p.trail = append(p.trail, [2]int{x, y})
-	if len(p.trail) > 5 {
-		p.trail = p.trail[len(p.trail)-5:]
+	if len(p.trail) > 7 {
+		p.trail = p.trail[len(p.trail)-7:]
 	}
 }
 
@@ -341,6 +394,31 @@ func drawParticleTrail(grid [][]cell, p *particle) {
 		for _, pt := range points {
 			setIfEmpty(grid, pt[0], pt[1], '.', color)
 		}
+	}
+}
+
+func drawDebris(grid [][]cell, frame int) {
+	height := len(grid)
+	width := len(grid[0])
+	cx := width / 2
+	cy := height / 2
+	count := width
+
+	for i := 0; i < count; i++ {
+		f := float64(i) + float64(frame)*0.8
+		theta := float64(i%9)*0.7 + math.Sin(f*0.015+float64(frame)*0.004)
+		r := math.Mod(f*0.12, float64(min(width, height))/2) * (0.6 + 0.25*math.Sin(float64(frame)*0.02))
+		x := cx + int(math.Cos(theta)*r)
+		y := cy + int(math.Sin(theta)*r*0.55)
+		if x < 0 || x >= width || y < 0 || y >= height {
+			continue
+		}
+		color := particlePalette[(i/3+frame/7)%len(particlePalette)]
+		glyph := byte('.')
+		if i%11 == 0 {
+			glyph = '*'
+		}
+		setIfEmpty(grid, x, y, glyph, color)
 	}
 }
 
@@ -391,14 +469,39 @@ func updateParticles(particles []particle) {
 		} else if p.angle < 0 {
 			p.angle += math.Pi * 2
 		}
-		noise := (rand.Float64() - 0.5) * 0.002
-		p.radius = clampFloat(p.radius+noise, 0.25, 0.95)
+		noise := (rand.Float64() - 0.5) * 0.003
+		tiltDrift := (rand.Float64() - 0.5) * 0.004
+		p.radius = clampFloat(p.radius+noise, 0.25, 0.98)
+		p.tilt = clampFloat(p.tilt+tiltDrift, 0.5, 0.85)
+		p.angularVel = clampFloat(p.angularVel+(rand.Float64()-0.5)*0.0006, -0.025, 0.025)
 	}
 }
 
 func updateRings(rings []ring) {
 	for i := range rings {
 		rings[i].phase += rings[i].speed
+	}
+}
+
+func drawRingArcs(grid [][]cell, cx, cy int, radius, thickness float64, frame int, ringIdx int) {
+	steps := int(radius * 6)
+	if steps < 24 {
+		steps = 24
+	}
+	glowShift := float64(frame)*0.12 + float64(ringIdx)
+	color := arcPalette[(ringIdx+frame/8)%len(arcPalette)]
+	for i := 0; i < steps; i++ {
+		angle := float64(i)/float64(steps)*math.Pi*2 + glowShift*0.15
+		mod := math.Sin(angle*4 + glowShift)
+		if mod < 0.25 {
+			continue
+		}
+		x := cx + int(math.Cos(angle)*radius)
+		y := cy + int(math.Sin(angle)*radius*0.6)
+		setIfEmpty(grid, x, y, '+', color)
+		if thickness > 1 {
+			setIfEmpty(grid, x, y+1, '.', color)
+		}
 	}
 }
 
