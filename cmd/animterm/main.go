@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"animinterminal/internal/animegirl"
 	"animinterminal/internal/aurora"
 	"animinterminal/internal/cloud"
 	"animinterminal/internal/cybercube"
@@ -21,7 +22,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | aurora | tunnel")
+	mode := flag.String("mode", "cybercube", "cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | animegirl | aurora | tunnel")
 	width := flag.Int("width", 0, "override character width")
 	height := flag.Int("height", 0, "override character height")
 	delay := flag.Duration("delay", 0, "override frame delay (e.g. 50ms)")
@@ -72,6 +73,10 @@ func main() {
 		cfg := jellyfish.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		jellyfish.Run(cfg)
+	case "animegirl", "girl", "portrait":
+		cfg := animegirl.DefaultConfig()
+		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
+		animegirl.Run(cfg)
 	case "aurora", "borealis", "polar":
 		cfg := aurora.DefaultConfig()
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
@@ -81,7 +86,7 @@ func main() {
 		applyOverrides(&cfg.Width, &cfg.Height, &cfg.FrameDelay, width, height, delay)
 		tunnel.Run(cfg)
 	default:
-		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | aurora | tunnel)\n", *mode)
+		fmt.Printf("unknown mode %q (expected cybercube | rain | spectrum | cloud | starfield | orbit | plasma | skyline | ocean | jellyfish | animegirl | aurora | tunnel)\n", *mode)
 	}
 }
 
