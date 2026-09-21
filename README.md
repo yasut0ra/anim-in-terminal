@@ -9,7 +9,7 @@
 go run ./cmd/animterm -mode cybercube
 ```
 
-`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `tunnel`, `orbit`, `plasma`, `skyline`, `ocean`, `jellyfish`, `aurora` を指定できます。\
+`-mode` には `cybercube`, `rain`, `spectrum`, `cloud`, `starfield`, `tunnel`, `orbit`, `plasma`, `skyline`, `ocean`, `jellyfish`, `animegirl`, `aurora` を指定できます。\
 オプション `-width`, `-height`, `-delay` で端末サイズやスピードを上書きできます。  
 `cybercube` 時のみ `-cube-layout multi|single` で複数キューブと単一キューブを切り替えられます（デフォルト: `multi`）。
 
@@ -115,6 +115,15 @@ go run ./cmd/animterm -mode ocean
 go run ./cmd/animterm -mode jellyfish
 ```
 
+### Turning Anime Portrait
+
+提供された高密度AAを正面像に使い、アニメ風の女の子がゆっくり左右を見渡すポートレートモード。\
+正面・斜め45度・横顔の差分をキーフレームに使い、立体変形と輪郭に沿った切り替えで各角度をつないでいます。
+
+```bash
+go run ./cmd/animterm -mode animegirl
+```
+
 ### Aurora Borealis
 
 星空の下で揺らめく多層オーロラカーテンと山影を描く静かなモード。  
@@ -141,6 +150,7 @@ internal/
   skyline/     # ネオンシティ夜景
   ocean/       # オーシャンクラフト
   jellyfish/   # 漂うクラゲと触手
+  animegirl/   # 横を向くアニメ風ポートレート
   aurora/      # オーロラカーテン
   tunnel/      # 螺旋ワープトンネル
 go.mod
